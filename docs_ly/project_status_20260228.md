@@ -433,6 +433,148 @@ git checkout src/preprocess.h src/preprocess.cpp  # 回滚
 # 同时把 hesai_xt32.yaml 里的 lidar_type 改回 2
 ```
 
+---
+
+## 12. 项目结构与编译指南
+
+### 12.1 目录结构
+
+```
+~/Documents/liuyi/projects/thermal_nav/
+│
+├── fastlio_ws/                          ← FAST-LIO2 独立 colcon 工作空间
+│   ├── src/
+│   │   ├── FAST_LIO/                   ← FAST-LIO2 主体（含我们的 Hesai 修改）
+│   │   │   ├── config/hesai_xt32.yaml  ← 我们新建的 Hesai 配置文件
+│   │   │   └── src/preprocess.{h,cpp}  ← 我们添加了 hesai_handler
+│   │   └── livox_ros_driver2/          ← 消息接口 stub（无 Livox 硬件依赖）
+│   └── install/                        ← 编译产物（需 source）
+│
+└── autonomy_stack_mecanum_wheel_platform/   ← 主导航栈 colcon 工作空间
+    ├── src/base_autonomy/               ← 核心导航模块
+    │   ├── sensor_scan_generation/     ← 时间同步：state+scan → /sensor_scan
+    │   ├── terrain_analysis/           ← 地形分析 → /terrain_map
+    │   ├── terrain_analysis_ext/       ← 扩展地形分析（障碍物连通性检查）
+    │   ├── local_planner/              ← 局部规划 + pathFollower → /cmd_vel
+    │   ├── vehicle_simulator/          ← 系统集成入口（launch 文件在此）
+    │   │   ├── launch/system_scout_hesai.launch.py  ← 我们的主 launch 文件
+    │   │   └── scripts/odom_frame_relay.py           ← 我们写的坐标系修正节点
+    │   └── visualization_tools/        ← 可视化辅助节点
+    ├── src/slam/arise_slam_mid360/     ← 跳过编译（Livox 硬依赖，不适用）
+    ├── src/exploration_planner/tare_planner/  ← 跳过编译（OR-Tools x86，ARM 不兼容）
+    └── install/                        ← 编译产物（需 source）
+```
+
+---
+
+### 12.2 系统架构与数据流
+
+```
+传感器（实车）或 bag 回放
+  /lidar_points  (Hesai XT32, 10 Hz)
+  /camera/imu    (RealSense D455 IMU, ~193 Hz)
+         │
+         ▼
+  ┌─────────────────────────────┐
+  │  FAST-LIO2  (fastlio_ws)    │  LiDAR-Inertial 里程计 + 建图
+  └─────────────────────────────┘
+         │ remap /Odometry         → /state_estimation_raw
+         │ remap /cloud_registered → /registered_scan
+         ▼
+  odom_frame_relay.py           ← 坐标系修正（D455 光学帧 → ROS 标准帧）
+         │ 发布 /state_estimation  (Odometry, X=前 Y=左 Z=上)
+         ▼
+  sensor_scan_generation        ← 时间同步（state + scan → 同一时刻配对）
+         │ 发布 /sensor_scan + /state_estimation_at_scan
+         ▼
+  terrain_analysis              ← 地形可通行性分析
+         │ 发布 /terrain_map       (绿=可通行 红=障碍)
+         ▼
+  local_planner                 ← 局部路径规划
+         │ 发布 /free_paths        (候选路径扇形，水平面)
+         ▼
+  pathFollower                  ← 路径跟踪
+         │ 发布 /cmd_vel           (TwistStamped)
+         ▼
+  [待做] TwistStamped→Twist relay
+         ▼
+  scout_base                    ← 底盘驱动（接收 Twist）
+```
+
+**TF 树（当前配置）**：
+```
+map ──(identity,static)──▶ camera_init ──(FAST-LIO2,动态)──▶ body
+                                                                │
+                                                  (static,旋转修正 qxyzw=0.5,-0.5,0.5,0.5)
+                                                                ▼
+                                                             sensor
+                                                            /       \
+                                                 sensor→vehicle   sensor→camera
+                                                 (local_planner)  (local_planner)
+```
+
+---
+
+### 12.3 编译命令
+
+> 所有编译均在对应工作空间根目录下执行。
+
+#### FAST-LIO2 工作空间
+
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav/fastlio_ws
+colcon build --symlink-install
+```
+
+> `--symlink-install`：Python 脚本和 launch 文件以软链接安装，改完源文件无需重新编译。
+
+#### 主导航栈（首次或全量编译）
+
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform
+colcon build \
+  --packages-skip arise_slam_mid360 arise_slam_mid360_msgs livox_ros_driver2 tare_planner \
+  --symlink-install
+```
+
+> 跳过原因：
+> - `arise_slam_mid360` / `arise_slam_mid360_msgs`：强依赖 Livox 驱动，本项目不用
+> - `livox_ros_driver2`：已在 fastlio_ws 中用 stub 替代
+> - `tare_planner`：依赖 x86 专用 OR-Tools 二进制，aarch64 不兼容
+
+#### 单包快速重编（最常用）
+
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform
+colcon build --symlink-install --packages-select <包名>
+```
+
+| 修改了什么 | `--packages-select` 填什么 |
+|---|---|
+| `system_scout_hesai.launch.py` 或 `odom_frame_relay.py` | `vehicle_simulator` |
+| `localPlanner.cpp` 或 `pathFollower.cpp` | `local_planner` |
+| `terrainAnalysis.cpp` | `terrain_analysis` |
+| `preprocess.cpp` 或 `preprocess.h` | 见下方 FAST-LIO2 命令 |
+
+#### 重新编译 FAST-LIO2
+
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav/fastlio_ws
+colcon build --symlink-install --packages-select fast_lio
+```
+
+---
+
+### 12.4 环境 source 顺序（每个终端都需要）
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+```
+
+> 顺序很重要：先 ROS2，再 fastlio_ws（提供 fast_lio 包），再 autonomy_stack（提供导航模块）。
+
 
 
 

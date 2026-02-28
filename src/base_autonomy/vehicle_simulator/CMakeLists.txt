@@ -53,6 +53,11 @@ install(TARGETS
   sim_image_repub
   DESTINATION lib/${PROJECT_NAME})
 
+install(PROGRAMS
+  scripts/odom_frame_relay.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(
   DIRECTORY
   launch

@@ -4,9 +4,10 @@ system_scout_hesai.launch.py
 Scout Mini + Hesai XT32 + RealSense D455 IMU 专用 launch 文件。
 
 架构：
-  FAST-LIO2 (fastlio_ws)  →  remap  →  autonomy_stack navigation modules
-    /Odometry               →  /state_estimation
+  FAST-LIO2 (fastlio_ws)  →  remap  →  odom_frame_relay  →  autonomy_stack
+    /Odometry               →  /state_estimation_raw
     /cloud_registered       →  /registered_scan
+  odom_frame_relay：修正里程计方向（D455 body 帧 → ROS 标准帧）→ /state_estimation
 
 使用方式：
   # 阶段 C：离线验证（bag 回放，不接底盘）
@@ -68,8 +69,8 @@ def generate_launch_description():
     #  前提：fastlio_ws 的 install/setup.bash 已 source
     #
     #  话题重映射：
-    #    /Odometry         → /state_estimation   (nav_msgs/Odometry)
-    #    /cloud_registered → /registered_scan    (sensor_msgs/PointCloud2)
+    #    /Odometry         → /state_estimation_raw  (经 odom_frame_relay 修正后再发 /state_estimation)
+    #    /cloud_registered → /registered_scan        (sensor_msgs/PointCloud2)
     # ------------------------------------------------------------------ #
     fastlio_config_path = os.path.join(
         get_package_share_directory('fast_lio'), 'config')
@@ -83,9 +84,19 @@ def generate_launch_description():
             {'use_sim_time': use_sim_time},
         ],
         remappings=[
-            ('/Odometry',         '/state_estimation'),
+            ('/Odometry',         '/state_estimation_raw'),
             ('/cloud_registered', '/registered_scan'),
         ],
+        output='screen',
+    )
+
+    # odom_frame_relay：修正里程计坐标系方向
+    #   D455 body 帧（Z=前，X=右，Y=下）→ ROS 标准帧（X=前，Y=左，Z=上）
+    #   q_corrected = q_fastlio ⊗ (0.5, -0.5, 0.5, 0.5)
+    start_odom_relay = Node(
+        package='vehicle_simulator',
+        executable='odom_frame_relay.py',
+        name='odom_frame_relay',
         output='screen',
     )
 
@@ -158,22 +169,23 @@ def generate_launch_description():
     #  缺失的连接：
     #    1. map ← camera_init：FAST-LIO2 用 camera_init 作为世界帧，
     #       autonomy_stack 用 map，二者等价，发布 identity TF 桥接
-    #    2. body → sensor：FAST-LIO2 的机体帧 = IMU 帧，
-    #       autonomy_stack 的 sensor 帧 = LiDAR 帧，
-    #       此处用 identity 近似（真实偏移 < 10cm，可视化足够）
+    #    2. body → sensor：将 D455 body 帧（Z=前，X=右，Y=下）旋转到
+    #       autonomy_stack 期望的 sensor 帧（X=前，Y=左，Z=上）
+    #       旋转四元数 (qx,qy,qz,qw) = (0.5, -0.5, 0.5, 0.5)
+    #       验证：body.Z(前)→sensor.X ✓  body.X(右)→sensor.(-Y) ✓  body.Y(下)→sensor.(-Z) ✓
     # ------------------------------------------------------------------ #
     tf_map_to_camera_init = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='tf_map_to_camera_init',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'camera_init'],
+        arguments=['0', '0', '0', '0', '0', '0', '1', 'map', 'camera_init'],
     )
 
     tf_body_to_sensor = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='tf_body_to_sensor',
-        arguments=['0', '0', '0', '0', '0', '0', 'body', 'sensor'],
+        arguments=['0', '0', '0', '0.5', '-0.5', '0.5', '0.5', 'body', 'sensor'],
     )
 
     # ------------------------------------------------------------------ #
@@ -196,6 +208,7 @@ def generate_launch_description():
     ld.add_action(tf_map_to_camera_init)
     ld.add_action(tf_body_to_sensor)
     ld.add_action(start_fastlio)
+    ld.add_action(start_odom_relay)
     ld.add_action(start_sensor_scan_generation)
     ld.add_action(start_terrain_analysis)
     ld.add_action(start_terrain_analysis_ext)
