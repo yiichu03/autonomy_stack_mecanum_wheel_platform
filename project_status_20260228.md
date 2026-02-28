@@ -64,11 +64,16 @@
 
 ### 3.2 未完成
 
-1. FAST-LIO2 工作空间搭建与编译
-2. 新数据包（含 IMU）采集与离线 SLAM 验证
-3. FAST-LIO2 到本栈话题接口对接（`/state_estimation`、`/registered_scan`）
-4. TwistStamped 到 Twist 的底盘控制桥接
-5. 上车联调与参数收敛
+1. **[前置] LiDAR-IMU 外参标定**：已从 `data_calibration.txt` 推算并填入 `hesai_xt32.yaml`；建议后续用 LI-Init 精标定验证
+2. **[前置] IMU 噪声参数标定**：当前使用 BMI055 保守初始值；需录静止 bag 做 Allan 方差分析后替换
+3. **[前置 ✓] FAST-LIO2 ROS2 工作空间**：已编译完成
+4. **[前置 ✓] LiDAR+IMU 数据包**：`run_20260228_194305`（61s，LiDAR 10Hz / IMU 193Hz，数据完整）
+5. **[当前] FAST-LIO2 离线 SLAM 验证**：在新 bag 上跑 FAST-LIO2，确认轨迹质量（见第 10 节命令速查）
+6. **[前置] TF 树搭建**：写静态 TF launch，发布 `base_link → lidar_link → camera_link`；用 `view_frames` 确认完整
+7. FAST-LIO2 话题 remap 到本栈接口（`/Odometry` → `/state_estimation`，`/cloud_registered` → `/registered_scan`）
+8. base_autonomy 模块集成验证（不接底盘）
+9. TwistStamped → Twist relay + 底盘接入
+10. 上车联调与参数收敛
 
 ## 4. 当前处境（客观判断）
 
@@ -91,7 +96,18 @@
 本栈输出 `TwistStamped`，Scout 接收 `Twist`。  
 建议先加轻量 relay（`TwistStamped -> Twist`），尽量不动原算法核心。
 
-### 5.3 规划路线
+### 5.3 FAST-LIO2 接入的四个前置条件
+
+在进入阶段 B 之前，以下四项必须完成，缺任何一项都会导致 SLAM 无法正常运行：
+
+| 前置条件 | 风险说明 | 推荐做法 |
+|---|---|---|
+| LiDAR-IMU 外参 | 外参错误 → 定位漂移/崩溃，不会报错难以定位根因 | 先手工卷尺测量作初始值；精度要求高时用 LI-Init 自动标定 |
+| IMU 噪声参数 | 参数偏差 → 建图漂移，难以与外参问题区分 | 录静止 bag 做 Allan 方差分析，得 D455 实测值 |
+| FAST-LIO2 ROS2 版本 | ROS1 版本无法在 Humble 下编译 | 选用有 ROS2 branch 的 fork；确认 PointCloud2 字段兼容 |
+| TF 树 | TF 缺失 → terrain_analysis/sensor_scan_generation 静默失败 | 写静态 TF launch，`view_frames` 确认后再集成 |
+
+### 5.4 规划路线
 
 1. 第一优先：局部导航闭环跑通
 2. 第二优先：接入 FAR 全局规划
@@ -105,19 +121,30 @@
 2. 用 `ros2 bag info` 确认消息数、持续时间、话题完整性
 3. 产出一组可复现实验数据作为后续基准
 
-### 阶段 B：离线 SLAM 验证
+### 阶段 A'：SLAM 前置条件（阶段 A 后立即做，阶段 B 的硬前提）
 
-1. 完成 FAST-LIO2 编译
-2. 基于新 bag 回放（`--clock`）验证轨迹和点云稳定性
-3. 固化首版 `hesai_xt32` 参数配置（话题、外参、噪声）
+1. **外参测量**：用卷尺测量 D455 加速度计中心相对 XT32 坐标原点的 XYZ 偏移，旋转按安装角估算，记录到 FAST-LIO2 config
+2. **IMU 噪声标定**：录一段 5 分钟以上完全静止的 bag（只含 `/camera/imu`），用 `imu_utils` 或 `allan_variance_ros` 分析，得到四个噪声参数
+3. **FAST-LIO2 ROS2 版本选型**：拉取带 ROS2 支持的仓库 branch，完成 aarch64 编译，确认 Hesai `/lidar_points` 的 PointCloud2 字段（x/y/z/intensity）可被正常解析
+4. **TF 树搭建**：写 `static_tf.launch.py`，发布 `base_link → lidar_link`、`base_link → camera_link（imu_link）`；用 `view_frames` 确认无断链
+
+### 阶段 B：离线 SLAM 验证（当前阶段）
+
+数据包就绪：`/home/rho/Documents/data/run_20260228_194305/rosbag`（见第 10 节运行命令）
+
+1. 基于 bag 回放（`--clock`）运行 FAST-LIO2
+2. 在 RViz 中确认：轨迹连续无跳变、点云注册稳定、无明显漂移
+3. 检查输出话题 frame_id（应为 `camera_init`）
+4. 固化首版参数截图作为基准
 
 ### 阶段 C：接口对接（不接底盘）
 
-1. 将 FAST-LIO2 输出映射到：
-   `/state_estimation`
-   `/registered_scan`
-2. 启动 base autonomy 子模块验证规划输出
-3. 确保 `local_planner` 使用 `config=standard` 且禁串口依赖路径
+1. 将 FAST-LIO2 输出 remap 到：
+   `/Odometry` → `/state_estimation`（注意 frame_id 需为 `map` 或与本栈一致）
+   `/cloud_registered` → `/registered_scan`
+2. 确认 TF 树完整（阶段 A' 产出）后再启动 base autonomy 子模块
+3. 确保 `local_planner` 使用 `config=standard`、`realRobot=false`
+4. 验证 `sensor_scan_generation`、`terrain_analysis`、`local_planner` 输出正常（RViz 观察）
 
 ### 阶段 D：接入底盘（低速安全）
 
@@ -132,17 +159,24 @@
 
 ## 7. 最近执行计划（建议按此顺序）
 
-### 本次采集后 24 小时内
+### 第 1 步（立即）：FAST-LIO2 离线验证
 
-1. 用新 bag 做一次 FAST-LIO2 离线跑通
-2. 出一版 RViz 截图与轨迹质量结论
-3. 确认是否存在明显时间同步偏差
+运行命令见第 10 节 B 节。验收标准：
+- RViz 里点云注册连续，轨迹无跳变
+- `/Odometry` 和 `/cloud_registered` 以约 10Hz 正常发布
+- 运行 61 秒后地图无大面积漂移
 
-### 之后 2-4 天
+### 第 2 步（B 通过后）：TF 树 + 话题对接
 
-1. 完成话题对接与 relay 节点
-2. 完成不接底盘的导航链路验证
-3. 做第一次低速上车验证
+1. 写 `static_tf.launch.py`（base_link → lidar_link/camera_link）
+2. 写 FAST-LIO2 → autonomy_stack 的 remap launch（见第 10 节 C 节）
+3. 启动 base_autonomy 模块（不接底盘），在 RViz 中确认 `terrain_analysis` 和 `local_planner` 输出
+
+### 第 3 步（之后 2-4 天）：底盘接入
+
+1. 写 TwistStamped → Twist relay 节点（5 行代码）
+2. 低速实车闭环验证（先走直线，再走圆弧）
+3. 第一次 waypoint 导航验证
 
 ## 8. 请老师/其他 AI 重点帮看
 
@@ -154,8 +188,103 @@
 
 ## 9. 附：当前关键文件
 
-1. 项目精简记录：`/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/jilu.md`
-2. 项目原始记录：`/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/jilu_raw_20260228.md`
-3. 本文档：`/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/project_status_20260228.md`
-4. 新采集脚本：`/home/rho/Documents/liuyi/run_collect3.sh`
-5. 阶段 0 编译日志：`/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/build_stage0.log`
+1. 项目精简记录：`thermal_nav/autonomy_stack_mecanum_wheel_platform/jilu.md`
+2. 本文档：`thermal_nav/autonomy_stack_mecanum_wheel_platform/project_status_20260228.md`
+3. 采集脚本（LiDAR+IMU）：`~/Documents/liuyi/run_collect3.sh`
+4. FAST-LIO2 工作空间：`thermal_nav/fastlio_ws/`
+5. FAST-LIO2 Hesai 配置：`thermal_nav/fastlio_ws/src/FAST_LIO/config/hesai_xt32.yaml`
+6. 基准数据包（LiDAR+IMU）：`~/Documents/data/run_20260228_194305/rosbag`
+7. 外参标定原始数据：`thermal_nav/autonomy_stack_mecanum_wheel_platform/data_calibration.txt`
+8. 阶段 0 编译日志：`thermal_nav/autonomy_stack_mecanum_wheel_platform/build_stage0.log`
+
+---
+
+## 10. 运行命令速查
+
+> 以下所有命令均在 AGX Orin 上执行。每个"终端"需独立开启，不共享 shell 状态。
+
+### A. 环境 source（每个终端都要先执行）
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
+```
+
+---
+
+### B. 阶段 B：FAST-LIO2 离线验证
+
+**终端 1 — 启动 FAST-LIO2（含 RViz）：**
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
+ros2 launch fast_lio mapping.launch.py \
+  config_file:=hesai_xt32.yaml \
+  use_sim_time:=true \
+  rviz:=true
+```
+
+**终端 2 — 回放数据包：**
+```bash
+source /opt/ros/humble/setup.bash
+ros2 bag play /home/rho/Documents/data/run_20260228_194305/rosbag --clock
+```
+
+**终端 3 — 验证输出话题（运行时检查）：**
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
+# 检查输出频率（应约 10Hz）
+ros2 topic hz /Odometry
+ros2 topic hz /cloud_registered
+# 检查坐标系（frame_id 应为 camera_init）
+ros2 topic echo /Odometry --once | grep -E "frame_id|child_frame"
+```
+
+**FAST-LIO2 输出话题对照表：**
+
+| FAST-LIO2 发布话题 | 消息类型 | 对接目标（autonomy_stack） |
+|---|---|---|
+| `/Odometry` | `nav_msgs/Odometry` | `/state_estimation` |
+| `/cloud_registered` | `sensor_msgs/PointCloud2` | `/registered_scan` |
+| `/path` | `nav_msgs/Path` | （仅 RViz 可视化，无需 remap） |
+
+---
+
+### C. 阶段 C：接口对接（不接底盘）
+
+> 前提：阶段 B 验证通过，且 TF 树已搭建完毕
+
+**话题 remap 方法（ros2 run 临时 remap）：**
+```bash
+# 将 FAST-LIO2 输出 remap 到 autonomy_stack 期望话题
+ros2 run topic_tools relay /Odometry /state_estimation
+ros2 run topic_tools relay /cloud_registered /registered_scan
+```
+
+**启动 autonomy_stack 核心模块（不接底盘，realRobot=false）：**
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+# TODO: 新建 scout_hesai.launch（参考 system_real_robot.launch）
+# 关键参数: realRobot:=false, vehicleType:=standard
+```
+
+---
+
+### D. 阶段 D：底盘接入
+
+**TwistStamped → Twist relay（临时方案）：**
+```bash
+# pathFollower 发布 /cmd_vel (TwistStamped)，scout_base 需要 Twist
+# 用 topic_tools 做类型转换（需要自定义节点，topic_tools relay 无法做类型转换）
+# TODO: 写 5 行 Python relay 节点
+```
+
+**IMU 噪声标定（待做，改善 SLAM 质量）：**
+```bash
+# 录 5 分钟静止 bag（只录 IMU）
+ros2 bag record /camera/imu -o ~/Documents/data/imu_static_calib
+
+# 之后用 imu_utils 或 allan_variance_ros 分析（需单独安装）
+```

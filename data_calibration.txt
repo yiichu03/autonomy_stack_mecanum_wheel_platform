@@ -1,0 +1,110 @@
+## The intrinsic parameters
+
+### camera intrinsics calibration
+
+> Depth PNGs in `realsense/depth_raw/` are **aligned to the Color frame** (`align_to_color`).
+> Use the **Color intrinsics** for back-projection/point clouds.
+>
+> For a given run, check `realsense_calibration_<timestamp>.yaml`; **below we use `run_20250910_152028` as an example**.
+
+#### RealSense Color/Depth camera
+
+We saved the depth images which are aligned to the color images pixel by pixel, so the depth camera for the saved depth images has the same camera model as the RGB camera.
+
+    width: 640
+    height: 480
+    ppx: 321.5436096191
+    ppy: 243.3150024414
+    fx: 386.4121093750
+    fy: 385.8505249023
+    model: Inverse Brown Conrady
+    coeffs: [-0.0550349094, 0.0627269447, -0.0008203980, 0.0003794413, -0.0196892563]
+
+#### RealSense Depth camera
+
+The below values are given by the realsense API, but we saved the depth images which are aligned to the color images pixel by pixel, so the depth camera for the saved depth images has the same camera model as the RGB camera.
+
+    width: 640
+    height: 480
+    ppx: 317.8610839844
+    ppy: 240.7387237549
+    fx: 390.1322021484
+    fy: 390.1322021484
+    model: Brown Conrady
+    coeffs: [0.0000000000, 0.0000000000, 0.0000000000, 0.0000000000, 0.0000000000]
+
+
+### IMU intrinsics BM1055
+
+The data spreadsheet is available [here](https://www.mouser.com/datasheet/2/783/BST-BMI055-DS000-08-786482.pdf?srsltid=AfmBOorUcGFSPTaZjC-Zrd2kpMmya0Kmw5eFXcKGq4N-LVC6Rr-ZCMj0).
+
+## The coordinate frames
+
+with respect to the wheeled robot,
+lidar: x left, y behind, z up
+RGB: x right, y down, z forward 
+depth: x right, y down, z forward 
+thermal left: x right, y down, z forward
+thermal right: x right, y down, z forward
+wheeled robot base link frame: x forward, y left, z up
+
+## The extrinsic parameters
+
+### RGB thermal camera calibration
+
+Left thermal camera to RGBD
+
+```
+color_R_left_thermal = [[0.999979691664164, 0.006359021898875782, -0.0004232017641123605],
+                       [-0.006357600546184011, 0.9999744135762715, 0.0032791932067709082],
+                       [0.00044404339730520217, -0.003276436064047327, 0.9999945338811506]] 
+
+color_p_left_thermal = [[-0.07309151021484832], [0.06182557268473313], [-0.02263297651799525]] 
+```
+
+Right thermal camera to RGBD
+
+```
+color_R_right_thermal = [[  0.999908420706305,   -0.00024491231715303736, -0.013531083422256686],
+                        [  0.0003584340010288189,  0.9999647566365966,     0.008387908546202551],
+                        [  0.013528552239248271, -0.008391990387831606,    0.9998732683553655]]
+
+color_p_right_thermal = [[0.04859129385472171], [0.06137165587653924], [0.02590015980557313]]                
+```
+
+### lidar RGB camera calibration
+
+We estimate the rigid transform from the RGB camera frame to the LiDAR frame using the open-source tool [direct_visual_lidar_calibration](https://github.com/koide3/direct_visual_lidar_calibration)
+
+```
+"lidar_T_camera": [
+      -0.02671709287258754,
+      -0.07986985425426218,
+      -0.07194136971184459,
+      -0.0025930314846405633,
+      0.7233645800633655,
+      -0.6904201829671065,
+      -0.007545293177736468
+    ]
+```
+lidar_T_camera: [x, y, z, qx, qy, qz, qw] (i.e., p_lidar = lidar_T_camera * p_camera)
+
+### RGB IMU calibration
+
+  **color_T_accel:**
+    rotation: [0.9999979734, -0.0019087758, -0.0005975506, 0.0019081110, 0.9999975562, -0.0011112079, 0.0005996702, 0.0011100655, 0.9999992251]
+    translation: [-0.0289905090, -0.0074758902, -0.0158451088]
+
+  **color_T_gyro:**
+    rotation: [0.9999979734, -0.0019087758, -0.0005975506, 0.0019081110, 0.9999975562, -0.0011112079, 0.0005996702, 0.0011100655, 0.9999992251]
+    translation: [-0.0289905090, -0.0074758902, -0.0158451088]
+
+  **color_T_gyro:**
+    rotation: [1.0000000000, 0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000, 0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000]
+    translation: [0.0302200001, -0.0074000000, -0.0160200000]
+
+  **depth_T_gyro:**
+    rotation: [1.0000000000, 0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000, 0.0000000000, 0.0000000000, 0.0000000000, 1.0000000000]
+    translation: [0.0302200001, -0.0074000000, -0.0160200000]
+
+> Extrinsics are exported from the RealSense D455 at runtime via librealsense
