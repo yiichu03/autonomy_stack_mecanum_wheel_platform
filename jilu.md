@@ -513,3 +513,497 @@ Hesai 的具体型号和 ROS2 驱动输出：点云里是否有 ring、是否有
 Scout Mini 你现在用的 ROS2 底盘驱动接口：订阅的是 /cmd_vel(Twist) 还是别的；是否已经有轮速里程计 /odom 可用。
 你想“跑通导航”具体到哪一级：只要 waypoint+避障，还是必须包含建图定位+全局到点+探索。
 ```
+
+# plan by claude sonnet 4.6 on agx orin 
+你应该可以看到当前文件夹下面有一个jilu.md，里面记录了我想做的事情，以及几个AI模型对我计划进行的可行性分析和计划。我想问一下你的想法是怎么样的，你比他们多了一个信息是，你当前是在我的agx orin环境中，这里有我之前使用硬件小车采集数据的代码，脚本的路径在/home/rho/Documents/liuyi/run_collect.sh,run_collect2.sh我采集数据时候运行的命令主要如下：                                                                            
+```                                                                                  ptp命令单独运行是因为要看到ptp时间趋向稳定了再开始录制数据：                                                                 
+terminal A:                                                                                   sudo ptp4l -f /etc/linuxptp/ptp4l-xt32.conf -i eno1 -m                                                                       
+terminal B:                                                                           sudo phc2sys -s /dev/ptp0 -c CLOCK_REALTIME -O 0 -m                                                                          
+terminal C:                                                                                   cd Documents/liuyi                                                                                ./run_collect.sh                                                                                                             
+如果需要记录底盘数据：                                                                                 terminal sudo modprobe gs_usb                                                                               sudo ip link set can2 up type can bitrate 500000                                                                             
+candump can2                                                                                 ros2 launch scout_base scout_mini_base.launch.py port_name:=can2                                                             
+terminal C:                                                                                   ./run_collect2.sh                                                                                                           ```                                                                                                                          
+  你应该也可以根据脚本找到我的雷达相关配置和我的采集数据代码等等信息。                                                         
+  所以我希望你可以基于当前情况，总结当前情况，并帮助我作出之后的详细计划。                                                     
+                                                                              
+```text
+好了，我已经把所有信息都收集完毕。让我给你一个基于实机环境的综合分析，这是其他AI模型无法提供的。
+
+  ---
+  当前情况总结（基于实机环境）
+
+  已确认的关键事实（其他AI不知道的）
+
+  1. 环境完全兼容 ✅
+
+  - AGX Orin 上跑的是 Ubuntu 22.04.5 LTS（JetPack 6.x） — 直接匹配，无兼容性问题
+  - ROS2 Humble 已安装
+  - hesai_ros_driver、scout_base、scout_msgs 均已安装
+
+  2. Hesai XT32 有内置 IMU ✅（重大发现）
+
+  其他AI模型猜测你可能没有IMU。但查看你的驱动配置：
+  # /home/rho/Documents/hesai_ws/src/HesaiLidar_ROS_2.0/config/config.yaml
+  send_imu_ros: true
+  ros_send_imu_topic: /lidar_imu
+  XT32 的 SDK 里就有 imu_accel_x/y/z、imu_ang_vel_x/y/z 字段。不需要外挂 IMU。
+
+  3. or-tools 是 x86-64，在 Orin 上会直接编译失败 ❌（已确认）
+
+  libortools.so.9.8.3296: ELF 64-bit LSB shared object, x86-64
+  tare_planner（exploration_planner）在 ARM64 上无法链接，必须跳过或替换。
+
+  4. Scout Mini 驱动接口已确认
+
+  scout_base 驱动订阅的是 geometry_msgs::msg::Twist（不是 TwistStamped），话题是 /cmd_vel。需要一个转接节点。
+
+  5. Hesai 驱动发布的话题
+
+  - 点云：/lidar_points（PointCloud2）
+  - IMU：/lidar_imu（sensor_msgs/Imu）
+  - 而仓库 SLAM 期望的是 /lidar/scan 和 /imu/data
+
+  6. 你已经有完整的历史采集数据
+
+  run_collect.sh 已经采集了 /lidar_points 的 rosbag + 相机数据。可以先拿历史数据做 SLAM 离线验证，不需要反复上车。
+
+  ---
+  系统架构和改动清单
+
+  现状（你这边）             需要对接到（目标仓库）
+  ────────────────────────────────────────────────────────
+  Hesai XT32
+    /lidar_points (PointCloud2)  ─┐
+    /lidar_imu   (Imu)           ─┤─→ [SLAM 替换] → /state_estimation (Odometry)
+                                  ┘             → /registered_scan (PointCloud2)
+                                                        ↓
+                                                sensor_scan_generation  ✅ 无需改
+                                                        ↓
+                                                terrain_analysis        ✅ 无需改
+                                                        ↓
+                                                local_planner           ⚠️  config=standard
+                                                        ↓
+                                           /cmd_vel (TwistStamped)
+                                                        ↓
+                                           [relay节点：TwistStamped→Twist]
+                                                        ↓
+                                           Scout Mini /cmd_vel (Twist) ✅ 已有驱动
+
+  ---
+  各模块状态一览
+
+  ┌─────────────────────────────┬─────────────────────────────────┬───────────────────┐
+  │            模块             │              状态               │      工作量       │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ Hesai 驱动                  │ ✅ 已装好，已有配置             │ 零                │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ Scout 驱动                  │ ✅ 已装好                       │ 零                │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ arise_slam_mid360           │ ❌ 深度绑定 Livox，替换掉       │ 用 FAST-LIO2 替换 │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ sensor_scan_generation      │ ✅ 标准接口，可直接用           │ 零                │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ terrain_analysis            │ ✅ 标准接口，可直接用           │ 零                │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ local_planner               │ ⚠️  config 改 standard，车身尺寸 │ 小改              │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ TwistStamped→Twist relay    │ ❌ 需要写                       │ ~20 行代码        │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ route_planner (far_planner) │ ✅ 可直接用                     │ 零                │
+  ├─────────────────────────────┼─────────────────────────────────┼───────────────────┤
+  │ tare_planner (exploration)  │ ❌ or-tools 是 x86-64           │ 暂时跳过          │
+  └─────────────────────────────┴─────────────────────────────────┴───────────────────┘
+
+  ---
+  我的建议执行计划
+
+  阶段 0：编译验证（1-2天，可以现在开始，不需要硬件）
+
+  目标： 先把能编译的包编译通过，暴露所有编译期问题。
+
+  cd ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform
+
+  # 跳过 Livox SLAM + exploration_planner（or-tools 问题），先编译其余所有包
+  colcon build \
+    --packages-skip arise_slam_mid360 arise_slam_mid360_msgs livox_ros_driver2 tare_planner \
+    --symlink-install 2>&1 | tee build.log
+
+  预期结果：sensor_scan_generation, terrain_analysis, terrain_analysis_ext, local_planner, route_planner, visualization_tools 
+  全部编译通过。
+
+  ---
+  阶段 1：部署 FAST-LIO2（建议 2-3 天）
+
+  为什么选 FAST-LIO2 而不是硬啃 arise_slam：
+  - arise_slam 的非 Livox 路径有已知 bug（imu_init_success 只在 LIVOX 分支置 true）
+  - FAST-LIO2 对 Hesai XT32 有原生支持，在 AGX Orin 上有验证案例
+  - 输出 topic 简单 remap 即可对接
+
+  步骤：
+
+  # 1. 克隆 FAST-LIO2
+  cd ~/Documents
+  mkdir fast_lio_ws && cd fast_lio_ws && mkdir src && cd src
+  git clone --recursive https://github.com/hku-mars/FAST_LIO.git
+
+  # 2. 编译
+  cd ~/Documents/fast_lio_ws
+  colcon build --symlink-install
+
+  # 3. 配置 XT32（修改 config/velodyne.yaml 或创建 hesai_xt32.yaml）
+  # 关键参数：
+  #   lidar_type: 2          # velodyne 模式（机械旋转）
+  #   scan_line: 32          # XT32 是 32 线
+  #   N_SCANS: 32
+  #   Horizon_SCAN: 1800
+  # topic remap:
+  #   /velodyne_points → /lidar_points
+  #   /imu/data → /lidar_imu
+
+  # 4. 拿历史 rosbag 做离线验证（!!!重要：可以不用开车就测试)
+  ros2 bag play /home/rho/Documents/data/run_xxx/rosbag --clock
+  # 同时运行 FAST-LIO2 观察 /Odometry 和 /cloud_registered 输出质量
+
+  验证标准： rviz2 里能看到稳定的轨迹和点云地图，没有明显漂移。
+
+  ---
+  阶段 2：接口对接（1-2 天）
+
+  2.1 topic 重映射（在 launch 文件里）：
+  FAST-LIO2 输出: /Odometry → remap → /state_estimation
+  FAST-LIO2 输出: /cloud_registered → remap → /registered_scan
+
+  2.2 写 TwistStamped→Twist relay 节点（约 20 行 Python）：
+  # 订阅 /cmd_vel (TwistStamped)，转发为 /scout_cmd_vel (Twist)
+  # Scout 驱动 remap /cmd_vel 到 /scout_cmd_vel 或者直接改话题名
+
+  2.3 修改 local_planner 配置：
+  <!-- 在 local_planner.launch 中 -->
+  <arg name="config" default="standard"/>      <!-- 从 omniDir 改为 standard -->
+  <param name="vehicleLength" value="0.93"/>   <!-- Scout Mini 实际长度 -->
+  <param name="vehicleWidth"  value="0.57"/>   <!-- Scout Mini 实际宽度 -->
+
+  2.4 修改 system_real_robot.launch：
+  - 去掉 start_mid360（Livox 驱动）
+  - 去掉 start_arise_slam
+  - 加入 Hesai 驱动 launch
+  - 加入 FAST-LIO2 launch（带 remap）
+
+  ---
+  阶段 3：实车联调（逐步推进）
+
+  1. 先只跑 SLAM + rviz，手动推车，验证位姿追踪质量
+  2. 加上 terrain_analysis，看地形图生成是否正常
+  3. 接通 local_planner（不接底盘），在 rviz 里验证路径规划输出
+  4. 接通 Scout 底盘，joystick 辅助模式（realRobot=true，低速，紧急停车在手）
+  5. waypoint 导航：在 rviz 里点目标点，验证自主导航
+  6. 最后再考虑 far_planner（全局规划）
+
+  ---
+  我对比其他 AI 多给你的建议
+
+  1. 利用现有 rosbag 做离线 SLAM 验证
+  你已经采集了数据，这是其他 AI 没有利用的资源。FAST-LIO2 可以完整离线运行（加 --clock 参数），在正式上车前先把 SLAM
+  调好，节省大量硬件调试时间。
+
+  2. 不要现在搞 tare_planner（探索规划）
+  or-tools 是 x86-64 二进制，确认无法在 Orin 上用。等基础导航跑通后，再考虑找 ARM64 版 or-tools
+  替换，或者用其他探索规划方案。先把目标收窄为"waypoint + 避障导航"。
+
+  3. IMU 时间同步已经解决了
+  你的 ptp4l + phc2sys 流程把硬件时钟同步做好了。FAST-LIO2 对 IMU-LiDAR 时间同步要求高，你这套 PTP
+  方案正好满足需求。采集数据时已经在做这件事了。
+
+  4. XT32 的 IMU 质量可能不如专用 IMU
+  XT32 内置 IMU 精度有限（主要是消费级 MEMS），长距离/高速运动时漂移会比专用 IMU（如 WHEELTEC N100）大。Scout Mini
+  跑室内/短距离场景问题不大；如果将来要跑大范围户外，可以考虑加一个外置高精度 IMU。
+
+  ---
+  最关键的立即行动
+
+  你现在可以马上开始的第一件事（不需要硬件）：
+  1. 在这台 Orin 上执行阶段 0 的编译，看还有哪些包有问题
+  2. 同时拉取 FAST-LIO2，按 XT32 的参数配置好
+  3. 拿一段历史 rosbag 跑 FAST-LIO2，验证 SLAM 质量
+
+  要我帮你从哪一步开始？比如我可以直接帮你：
+  - 写修改后的 system_real_robot.launch
+  - 写 TwistStamped→Twist relay 节点
+  - 配置 FAST-LIO2 的 XT32 参数文件
+  - 先运行阶段 0 的编译来暴露问题
+```
+
+
+检查结论                                                                                                                         
+                                                                                                                                   
+  雷达目前没有通电/连接。                                                                                                          
+                                                                                                                                   
+  ┌──────────────────────┬──────────────────────────┐                                                                              
+  │         项目         │           状态           │                                                                              
+  ├──────────────────────┼──────────────────────────┤                                                                              
+  │ Orin 的网口 eno1     │ UP，IP 192.168.188.50    │                                                                              
+  ├──────────────────────┼──────────────────────────┤                                                                              
+  │ 雷达 192.168.188.201 │ INCOMPLETE（ARP 无响应） │                                                                              
+  ├──────────────────────┼──────────────────────────┤                                                                              
+  │ /lidar_points 数据   │ 无                       │                                                                              
+  ├──────────────────────┼──────────────────────────┤
+  │ /lidar_imu 数据      │ 无                       │
+  └──────────────────────┴──────────────────────────┘
+
+  驱动进程正常启动了（看到了 SDK 初始化日志），/lidar_imu 话题对象也创建出来了，但因为雷达没上电，没有 UDP
+  数据包进来，所以两个话题都没有实际数据发布。
+
+  ---
+  验证 IMU 的正确步骤
+
+  你需要在小车上电、雷达通电的状态下：
+
+  # 1. 启动 Hesai 驱动
+  source /home/rho/Documents/hesai_ws/install/setup.bash
+  ros2 run hesai_ros_driver hesai_ros_driver_node &
+
+  # 2. 等 3~5 秒连接建立后，检查话题频率
+  ros2 topic hz /lidar_imu --window 50
+
+  # 3. 看一条实际数据
+  ros2 topic echo /lidar_imu --once
+
+  如果 XT32 有内置 IMU，你会看到类似：
+  header:
+    frame_id: hesai_lidar
+  linear_acceleration: {x: 0.01, y: -0.02, z: 9.8}   # 静止时 z≈9.8
+  angular_velocity:    {x: 0.001, y: -0.001, z: 0.0}  # 静止时接近0
+  频率通常是 100Hz 左右。
+
+  如果 XT32 没有 IMU（或该型号不支持），话题会存在但永远没有数据发布。
+
+  ---
+  等你把小车通电之后，可以直接把上面的命令结果贴给我，我帮你判断 IMU 是否可用。
+
+两者跑的是同一个二进制节点 hesai_ros_driver_node，区别只有：
+
+  ┌────────────────┬──────────────────────┬──────────────────┐
+  │                │ ros2 launch start.py │ ros2 run ...node │
+  ├────────────────┼──────────────────────┼──────────────────┤
+  │ 节点           │ 同一个               │ 同一个           │
+  ├────────────────┼──────────────────────┼──────────────────┤
+  │ namespace      │ hesai_ros_driver     │ 无               │
+  ├────────────────┼──────────────────────┼──────────────────┤
+  │ 额外启动 rviz2 │ 是                   │ 否               │
+  └────────────────┴──────────────────────┴──────────────────┘
+
+  关键点在于：namespace 加了之后，按理说话题名会变成 /hesai_ros_driver/lidar_points——但实际上不会，原因在你的 config.yaml 里：
+
+  # config.yaml 第71行
+  ros_send_point_cloud_topic: /lidar_points   # ← 以 / 开头，绝对路径
+  ros_send_imu_topic:         /lidar_imu      # ← 同上
+
+  ROS2 中话题名以 / 开头就是绝对路径，不受 namespace 影响。所以不管用 launch 还是 run，话题都会发布到 /lidar_points 和
+  /lidar_imu，行为完全一致。
+
+  ---
+  所以我之前的测试结论是准确的：驱动本身没问题，话题结构正确，无数据的原因就是雷达没通电。等上电后按之前说的步骤验证 IMU 就行。
+
+
+
+R_rgbd2lidar = R.from_quat([-0.0025930314846405633, 0.7233645800633655, -0.6904201829671065, -0.007545293177736468]).as_matrix()
+
+t_rgbd2lidar = np.array([[-0.026], [-0.07986985425426218], [-0.07194136971184459]], dtype=np.float64)
+
+好，现在有了完整信息，给你一个彻底更新的分析。                                                                                   
+                                                                                      
+  ---                                                                                                                              
+  更新后的完整分析（最终版）                                                                                                       
+   
+  关键事实确认                                                                                                                     
+                                                                                                                                 
+  ┌────────────────┬──────────────────────────────────────────────────────────┐
+  │      项目      │                           结论                           │
+  ├────────────────┼──────────────────────────────────────────────────────────┤
+  │ IMU 来源       │ RealSense D455 内置 IMU（加速度计 + 陀螺仪，各 200Hz）✅ │
+  ├────────────────┼──────────────────────────────────────────────────────────┤
+  │ IMU 时间戳     │ 使用 RS2_TIMESTAMP_DOMAIN_GLOBAL_TIME，与系统时钟对齐 ✅ │
+  ├────────────────┼──────────────────────────────────────────────────────────┤
+  │ LiDAR 时间戳   │ PTP 同步到系统时钟 ✅                                    │
+  ├────────────────┼──────────────────────────────────────────────────────────┤
+  │ 两者时间对齐   │ 系统时钟是共同参考，天然对齐 ✅                          │
+  ├────────────────┼──────────────────────────────────────────────────────────┤
+  │ ROS2 驱动      │ realsense2_camera 已安装（isaac_ros_ws）✅               │
+  ├────────────────┼──────────────────────────────────────────────────────────┤
+  │ IMU→LiDAR 外参 │ 刚刚计算完毕，可以直接用 ✅                              │
+  └────────────────┴──────────────────────────────────────────────────────────┘
+
+  计算出来的外参
+
+  # FAST-LIO2 配置文件直接粘贴
+  extrinsic_R: [-0.999873, -0.014170, -0.007335,
+                 0.006667,  0.046626, -0.998890,
+                 0.014497, -0.998812, -0.046526]
+  extrinsic_T: [-0.055994, -0.064011, -0.063367]  # 单位：米
+
+  物理含义：IMU 在 LiDAR 坐标系下约 10.6cm 处，yaw 约 180°、roll 约 -93°。这个大角度看起来吓人，但对 FAST-LIO2 完全没有问题，它的
+  ESIKF 支持任意外参。
+
+  凑合用是否可行？
+
+  结论：完全可行，精度风险低。
+
+  这套外参的精度由两部分构成：
+
+  ┌──────────────────────────────┬────────────────────────────────┬──────────────────────────────┐
+  │             来源             │              精度              │             说明             │
+  ├──────────────────────────────┼────────────────────────────────┼──────────────────────────────┤
+  │ T_accel_to_depth（校准文件） │ 极高（出厂标定，~0.1mm/~0.1°） │ 旋转为单位阵，平移误差可忽略 │
+  ├──────────────────────────────┼────────────────────────────────┼──────────────────────────────┤
+  │ T_rgbd2lidar（你计算的）     │ 中等（~1-2cm, ~1-2°）          │ 是唯一的误差来源             │
+  └──────────────────────────────┴────────────────────────────────┴──────────────────────────────┘
+
+  FAST-LIO2 对 1-2° 外参旋转误差和 1-2cm 平移误差的鲁棒性较好。如果建图出现明显漂移，再用 LI-Init
+  工具做一次在线标定来精化外参即可。
+
+  ---
+  最终执行计划（完整更新版）
+
+  阶段 0：编译导航栈主体（今天可做）
+
+  cd ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform
+  colcon build \
+    --packages-skip arise_slam_mid360 arise_slam_mid360_msgs livox_ros_driver2 tare_planner \
+    --symlink-install 2>&1 | tee build.log
+
+  阶段 1：安装并配置 FAST-LIO2
+
+  # 1. 拉取
+  mkdir -p ~/Documents/fast_lio_ws/src && cd ~/Documents/fast_lio_ws/src
+  git clone --recursive https://github.com/hku-mars/FAST_LIO.git
+
+  # 2. 编译
+  cd ~/Documents/fast_lio_ws
+  colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+  配置文件关键内容（基于 velodyne.yaml 改）：
+  # hesai_xt32.yaml
+  common:
+    lid_topic: "/lidar_points"   # Hesai 输出
+    imu_topic: "/camera/imu"     # realsense2_camera 输出
+
+  mapping:
+    # 以下外参直接用上面计算的结果
+    extrinsic_T: [-0.055994, -0.064011, -0.063367]
+    extrinsic_R: [-0.999873, -0.014170, -0.007335,
+                    0.006667,  0.046626, -0.998890,
+                    0.014497, -0.998812, -0.046526]
+    # D455 IMU 噪声参数（需要比校准文件里的0有意义）
+    acc_cov: 3.9939e-3
+    gyr_cov: 1.5e-4
+    b_acc_cov: 1.0e-6
+    b_gyr_cov: 1.0e-6
+
+  preprocess:
+    lidar_type: 2     # VELODYNE（机械旋转型，XT32 兼容）
+    scan_line: 32
+    N_SCANS: 32
+    Horizon_SCAN: 1800
+    point_filter_num: 3
+
+  阶段 1.5：验证 SLAM（用历史 rosbag，不需要上车！）
+
+  # 终端1：播放历史数据（加 --clock 让时间戳生效）
+  ros2 bag play /home/rho/Documents/data/run_xxx/rosbag --clock
+
+  # 终端2：启动 realsense 取 IMU（播 bag 时可能要用录制的 imu csv 转成 bag）
+  # 或者直接插上 D455 取实时 IMU 配合 bag 里的 lidar 数据
+
+  # 终端3：FAST-LIO2
+  ros2 launch fast_lio mapping.launch.py config_file:=hesai_xt32.yaml use_sim_time:=true
+
+  注意： 现有的 bag 只录了 /lidar_points，没有 /camera/imu。要离线验证 SLAM 有两个选项：
+  1. 推荐：插上 D455，重新采一段数据同时存 lidar bag + imu（或者修改 run_collect.sh 增加 imu 话题）
+  2. 或者在新的 bag 录制时同时录 /camera/imu
+
+  阶段 2：接口适配（同之前，不受 IMU 来源影响）
+
+  ① topic remap: FAST-LIO2 → /state_estimation + /registered_scan
+  ② 写 TwistStamped→Twist relay（~20行Python）
+  ③ local_planner.launch: config=standard，vehicleLength=0.93，vehicleWidth=0.57
+  ④ 修改 system_real_robot.launch：去 Livox/arise_slam，加 Hesai + FAST-LIO2
+
+  阶段 3：实车联调（同之前）
+
+  ---
+  一个需要你确认的问题
+
+  你的 run_collect.sh 目前只录 /lidar_points：
+
+  ros2 bag record /lidar_points -o "${BASE_DIR}/rosbag"
+
+  如果后续还要用 bag 数据做离线开发/调参，建议把 /camera/imu 也加进去，这样就不需要每次验证都开车了：
+
+  ros2 bag record /lidar_points /camera/imu -o "${BASE_DIR}/rosbag"
+
+  这是一个很小的改动，但对后续工作价值很大。需要我帮你改这个脚本吗？
+
+# D455 IMU 噪声参数（需要比校准文件里的0有意义）                                                                                 
+      acc_cov: 3.9939e-3                                                                                                       
+      gyr_cov: 1.5e-4                                                                                                              
+      b_acc_cov: 1.0e-6                                                                                                            
+      b_gyr_cov: 1.0e-6                                                                                                        
+  你之前回答里的这个噪声参数是从哪里得到的                                                                                         
+                  
+● 坦白说：那些数字是我基于 D455 使用的 BMI055 类 MEMS IMU
+  的大致规格估算出来的，不是严格推导的。具体推导过程我不保证完全准确，也找不到一个权威来源说"D455 + FAST-LIO2 就用这几个值"。
+
+  这是一个需要特别注意的地方，因为这几个参数对 FAST-LIO2 的性能影响很大：太小会导致 SLAM 过度信任 IMU 而漂移，太大会导致 SLAM 忽略 
+  IMU 退化成纯 LiDAR 匹配。
+                                                                                                                                   
+  ---             
+  获取正确 D455 IMU 噪声参数的方法
+
+  方法一（最准确）：用你已有的 IMU 数据做 Allan 方差分析
+
+  你的采集脚本已经保存了 realsense/imu/accel.csv 和 realsense/imu/gyro.csv，可以直接用：
+
+  # 安装工具
+  pip3 install allan-variance-ros  # 或者用 imu_utils
+
+  # 找一段静止采集的 IMU 数据（小车静止放着录的）
+  ls /home/rho/Documents/data/*/realsense/imu/
+
+  Allan 方差分析会直接给出 FAST-LIO2 需要的 N（noise density）和 B（bias instability），然后换算：
+
+  acc_cov = N_acc²
+  gyr_cov = N_gyr²
+
+  方法二：查 Intel D455 datasheet 里的 IMU 规格
+
+  D455 的 IMU 型号是 BMI055，Intel 官方规格：
+
+  ┌──────────────────┬───────┬─────────┐
+  │       参数       │ 规格  │  单位   │
+  ├──────────────────┼───────┼─────────┤
+  │ 陀螺仪噪声密度   │ 0.007 │ °/s/√Hz │
+  ├──────────────────┼───────┼─────────┤
+  │ 加速度计噪声密度 │ ~0.17 │ mg/√Hz  │
+  └──────────────────┴───────┴─────────┘
+
+  换算到 FAST-LIO2 格式：
+  gyr noise = 0.007 * π/180 ≈ 1.22e-4 rad/s/√Hz → gyr_cov = (1.22e-4)² ≈ 1.5e-8
+  acc noise = 0.17e-3 * 9.81 ≈ 1.67e-3 m/s²/√Hz → acc_cov = (1.67e-3)² ≈ 2.8e-6
+
+  但这是连续时间谱密度，FAST-LIO2 的配置含义要看源码怎么用的，各个 fork 版本定义不一致。
+
+  方法三（最简单）：从 FAST-LIO2 仓库的已有配置出发调参
+
+  FAST-LIO2 仓库自带的配置文件里有参考值：
+
+  # 官方 Mid-360 配置（参考起点）
+  acc_cov: 0.01
+  gyr_cov: 0.01
+  b_acc_cov: 0.0001
+  b_gyr_cov: 0.0001
+
+  实际做法是：先用这个默认值跑起来看效果，在 rviz 里观察建图质量，再根据漂移情况手动调整，这是大多数人实际用的方式。
+
+  ---
+  建议： 先用方法三（仓库默认值）让系统跑通，等导航基线验证完后，如果 SLAM 质量不够用方法一做精确标定。
+
