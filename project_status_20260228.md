@@ -288,3 +288,160 @@ ros2 bag record /camera/imu -o ~/Documents/data/imu_static_calib
 
 # 之后用 imu_utils 或 allan_variance_ros 分析（需单独安装）
 ```
+
+---
+
+## 11. FAST-LIO2 源码修改记录
+
+> 本节记录对 `hku-mars/FAST_LIO`（ROS2 branch）所做的全部修改，方便排查问题或回滚。
+> 工作空间根目录：`~/Documents/liuyi/projects/thermal_nav/fastlio_ws/`
+
+---
+
+### 11.1 `livox_ros_driver2/CMakeLists.txt` — 替换为最小 stub
+
+**文件路径**：`src/livox_ros_driver2/CMakeLists.txt`
+
+**原因**：原版 `CMakeLists.txt` 需要 `liblivox_lidar_sdk_shared.so`（Livox 硬件 SDK），在本机不存在。
+FAST-LIO2 只在编译期需要 `livox_ros_driver2::msg::CustomMsg` 的消息头文件，运行时（Hesai 路径）完全不调用 Livox 代码。
+
+**做了什么**：把原 CMakeLists.txt（支持 ROS1/ROS2 双路径、含硬件 SDK 依赖）整体替换为只生成消息接口的最小版本，同时把 `package_ROS2.xml` 复制为 `package.xml`。
+
+**关键内容**：
+```cmake
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/CustomPoint.msg"
+  "msg/CustomMsg.msg"
+  DEPENDENCIES builtin_interfaces std_msgs
+)
+```
+
+**如何验证**：`ros2 interface list | grep livox` 能看到 `livox_ros_driver2/msg/CustomMsg` 和 `CustomPoint`。
+
+**如何回滚**：`cd src/livox_ros_driver2 && git checkout CMakeLists.txt`
+
+---
+
+### 11.2 `src/FAST_LIO/config/hesai_xt32.yaml` — 新增 Hesai XT32 配置文件
+
+**文件路径**：`src/FAST_LIO/config/hesai_xt32.yaml`（新建，不影响原有 yaml）
+
+**原因**：原仓库没有 Hesai 配置，需要新建。
+
+**关键参数说明**：
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `lid_topic` | `/lidar_points` | Hesai 驱动默认话题 |
+| `imu_topic` | `/camera/imu` | RealSense D455 IMU |
+| `lidar_type` | `5` | Hesai 专用 handler（见 11.3） |
+| `scan_line` | `32` | XT32 线数 |
+| `scan_rate` | `10` | 10 Hz |
+| `blind` | `0.5` | 最小有效距离（m） |
+| `extrinsic_T` | `[0.003695, -0.061117, -0.067414]` | LiDAR 原点在 IMU 坐标系中的位置（m） |
+| `extrinsic_R` | 见文件 | LiDAR→IMU 旋转矩阵（行优先） |
+| `extrinsic_est_en` | `false` | 使用标定值，不做在线估计 |
+| `acc_cov / gyr_cov` | `0.1 / 0.1` | BMI055 初始保守值，待 Allan 方差替换 |
+
+**外参推算链路**：
+```
+data_calibration.txt
+  lidar_T_camera  [x,y,z,qx,qy,qz,qw]   (direct_visual_lidar_calibration 工具)
++ color_T_accel   [R 3x3 | t 3x1]        (RealSense SDK 导出)
+  ↓ lidar_T_imu = lidar_T_camera * color_T_accel
+  ↓ 转换为 FAST-LIO2 约定 (p_imu = R * p_lidar + T)
+  → extrinsic_R = R_li^T,  extrinsic_T = -R_li^T * t_li
+```
+
+---
+
+### 11.3 `src/FAST_LIO/src/preprocess.h` — 添加 Hesai point struct 和 enum
+
+**文件路径**：`src/FAST_LIO/src/preprocess.h`
+
+**修改 1 — `LID_TYPE` 枚举新增 HESAI**
+
+```cpp
+// 修改前
+enum LID_TYPE { AVIA = 1, VELO16, OUST64, MID360 };
+
+// 修改后
+enum LID_TYPE { AVIA = 1, VELO16, OUST64, MID360, HESAI };  // HESAI = 5
+```
+
+**修改 2 — 新增 `hesai_ros::Point` struct 及 PCL 注册**
+
+在 `ouster_ros` 块之后、`livox_ros` 块之前插入：
+
+```cpp
+namespace hesai_ros
+{
+struct EIGEN_ALIGN16 Point
+{
+  PCL_ADD_POINT4D;
+  float    intensity;
+  uint16_t ring;
+  double   timestamp;   // 绝对时间戳，单位：秒
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+}
+POINT_CLOUD_REGISTER_POINT_STRUCT(hesai_ros::Point,
+    (float,    x,         x)
+    (float,    y,         y)
+    (float,    z,         z)
+    (float,    intensity, intensity)
+    (uint16_t, ring,      ring)
+    (double,   timestamp, timestamp))
+```
+
+**修改 3 — 在 `Preprocess` 类 private 区声明 `hesai_handler`**
+
+```cpp
+void hesai_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &msg);
+```
+
+---
+
+### 11.4 `src/FAST_LIO/src/preprocess.cpp` — 添加 hesai_handler 实现和 switch case
+
+**修改 1 — `process()` 函数的 switch 新增 case**
+
+```cpp
+case HESAI:
+    hesai_handler(msg);
+    break;
+```
+
+**修改 2 — 新增 `hesai_handler` 函数实现**（插入在 `default_handler` 之前）
+
+核心逻辑：
+- 用 `hesai_ros::Point` 反序列化，PCL 直接匹配 `timestamp`（float64）和 `ring`（uint16）字段，无类型警告
+- `given_offset_time = true`：以第一个点的绝对时间戳为基准，计算帧内相对时间
+- `curvature = (timestamp - t0) * 1000.0`（ms，与其他 handler 单位一致）
+- 过滤条件：`range < blind`、`ring >= N_SCANS`、`i % point_filter_num != 0`
+
+**为什么这样做**：
+原 `velodyne_handler` 期望字段名为 `time`（float32），而 Hesai XT32 发布的是 `timestamp`（float64，绝对秒）。PCL 找不到 `time` 字段时打印 `Failed to find match for field 'time'` 警告，并把 `time` 留 0，导致 `given_offset_time = false`，改由扫描频率估算相对时间，精度较低。新的 `hesai_handler` 直接读 `timestamp`，消除警告，同时获得真实的逐点时间戳，去畸变精度更高。
+
+**如何验证**：运行后终端不再出现 `Failed to find match for field 'time'` 输出。
+
+**如何回滚**：
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/src/FAST_LIO
+git diff src/preprocess.h src/preprocess.cpp   # 查看改动
+git checkout src/preprocess.h src/preprocess.cpp  # 回滚
+# 同时把 hesai_xt32.yaml 里的 lidar_type 改回 2
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

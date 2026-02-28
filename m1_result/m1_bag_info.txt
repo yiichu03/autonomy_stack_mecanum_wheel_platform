@@ -1,0 +1,11 @@
+
+Files:             rosbag_0.db3
+Bag size:          1.9 GiB
+Storage id:        sqlite3
+Duration:          61.257874763s
+Start:             Feb 28 2026 19:43:19.380720345 (1772278999.380720345)
+End:               Feb 28 2026 19:44:20.638595108 (1772279060.638595108)
+Messages:          12453
+Topic information: Topic: /camera/imu | Type: sensor_msgs/msg/Imu | Count: 11840 | Serialization Format: cdr
+                   Topic: /lidar_points | Type: sensor_msgs/msg/PointCloud2 | Count: 613 | Serialization Format: cdr
+
