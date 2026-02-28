@@ -1,0 +1,148 @@
+Starting >>> visibility_graph_msg
+Starting >>> serial
+Starting >>> ros_tcp_endpoint
+Starting >>> domain_bridge
+Starting >>> goalpoint_rviz_plugin
+Starting >>> sensor_scan_generation
+Starting >>> teleop_rviz_plugin
+Starting >>> teleop_rviz_plugin_plus
+Starting >>> terrain_analysis
+Starting >>> terrain_analysis_ext
+Starting >>> visualization_tools
+Starting >>> waypoint_example
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'script-dir' will not be supported in future versions. Please use the underscore name 'script_dir' instead
+  warnings.warn(
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'install-scripts' will not be supported in future versions. Please use the underscore name 'install_scripts' instead
+  warnings.warn(
+--- stderr: ros_tcp_endpoint
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'script-dir' will not be supported in future versions. Please use the underscore name 'script_dir' instead
+  warnings.warn(
+---
+Finished <<< ros_tcp_endpoint [3.66s]
+Starting >>> waypoint_rviz_plugin
+--- stderr: serial
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/serial/src/impl/list_ports/list_ports_linux.cc: In function ‘std::vector<std::__cxx11::basic_string<char> > glob(const std::vector<std::__cxx11::basic_string<char> >&)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/serial/src/impl/list_ports/list_ports_linux.cc:66:40: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   66 |     for(int path_index = 0; path_index < glob_results.gl_pathc; path_index++)
+      |                             ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/serial/src/impl/list_ports/list_ports_linux.cc:57:9: warning: variable ‘glob_retval’ set but not used [-Wunused-but-set-variable]
+   57 |     int glob_retval = glob(patterns[0].c_str(), 0, NULL, &glob_results);
+      |         ^~~~~~~~~~~
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/serial/src/impl/list_ports/list_ports_linux.cc: In function ‘std::string format(const char*, ...)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/serial/src/impl/list_ports/list_ports_linux.cc:246:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+  246 |         else if( return_value >= buffer_size_bytes )
+      |                  ~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+---
+Finished <<< serial [4.68s]
+Starting >>> local_planner
+Finished <<< visibility_graph_msg [22.9s]
+Starting >>> boundary_handler
+Finished <<< teleop_rviz_plugin [39.6s]
+Starting >>> far_planner
+Finished <<< teleop_rviz_plugin_plus [43.6s]
+Starting >>> graph_decoder
+--- stderr: goalpoint_rviz_plugin
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/goalpoint_rviz_plugin/src/goalpoint_tool.cpp: In member function ‘virtual void goalpoint_rviz_plugin::GoalpointTool::onPoseSet(double, double, double)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/goalpoint_rviz_plugin/src/goalpoint_tool.cpp:52:58: warning: unused parameter ‘theta’ [-Wunused-parameter]
+   52 | void GoalpointTool::onPoseSet(double x, double y, double theta)
+      |                                                   ~~~~~~~^~~~~
+---
+Finished <<< goalpoint_rviz_plugin [51.5s]
+Starting >>> teleop_joy_controller
+--- stderr: waypoint_rviz_plugin
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/waypoint_rviz_plugin/src/waypoint_tool.cpp: In member function ‘virtual void waypoint_rviz_plugin::WaypointTool::onPoseSet(double, double, double)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/waypoint_rviz_plugin/src/waypoint_tool.cpp:52:57: warning: unused parameter ‘theta’ [-Wunused-parameter]
+   52 | void WaypointTool::onPoseSet(double x, double y, double theta)
+      |                                                  ~~~~~~~^~~~~
+---
+Finished <<< waypoint_rviz_plugin [51.4s]
+Starting >>> vehicle_simulator
+Finished <<< domain_bridge [1min 2s]
+Finished <<< waypoint_example [1min 5s]
+--- stderr: boundary_handler
+** WARNING ** io features related to pcap will be disabled
+---
+Finished <<< boundary_handler [53.7s]
+Finished <<< sensor_scan_generation [1min 18s]
+Finished <<< visualization_tools [1min 20s]
+--- stderr: teleop_joy_controller
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/teleop_joy_controller/src/teleopJoyController.cpp: In function ‘int main(int, char**)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/utilities/teleop_joy_controller/src/teleopJoyController.cpp:94:26: warning: catching polymorphic type ‘class serial::IOException’ by value [-Wcatch-value=]
+   94 |         } catch (serial::IOException) {
+      |                          ^~~~~~~~~~~
+---
+Finished <<< teleop_joy_controller [30.7s]
+Finished <<< terrain_analysis_ext [1min 25s]
+Finished <<< terrain_analysis [1min 25s]
+--- stderr: graph_decoder
+CMake Warning (dev) at CMakeLists.txt:19 (find_package):
+  Policy CMP0074 is not set: find_package uses <PackageName>_ROOT variables.
+  Run "cmake --help-policy CMP0074" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+
+  CMake variable PCL_ROOT is set to:
+
+    /usr
+
+  For compatibility, CMake is ignoring the variable.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+---
+Finished <<< graph_decoder [1min 7s]
+--- stderr: local_planner
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/base_autonomy/local_planner/src/pathFollower.cpp: In function ‘int main(int, char**)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/base_autonomy/local_planner/src/pathFollower.cpp:400:47: warning: suggest parentheses around ‘&&’ within ‘||’ [-Wparentheses]
+  400 |       if (odomTime < slowInitTime + slowTime1 && slowInitTime > 0 || slowDown == 1) joySpeed3 *= slowRate1;
+      |           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/base_autonomy/local_planner/src/pathFollower.cpp:401:64: warning: suggest parentheses around ‘&&’ within ‘||’ [-Wparentheses]
+  401 |       else if (odomTime < slowInitTime + slowTime1 + slowTime2 && slowInitTime > 0 || slowDown == 2) joySpeed3 *= slowRate2;
+      |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/base_autonomy/local_planner/src/pathFollower.cpp:460:32: warning: catching polymorphic type ‘class serial::IOException’ by value [-Wcatch-value=]
+  460 |               } catch (serial::IOException) {
+      |                                ^~~~~~~~~~~
+---
+Finished <<< local_planner [1min 48s]
+--- stderr: vehicle_simulator
+** WARNING ** io features related to pcap will be disabled
+/usr/bin/ld: warning: libopencv_imgcodecs.so.4.5d, needed by /opt/ros/humble/lib/libcv_bridge.so, may conflict with libopencv_imgcodecs.so.413
+/usr/bin/ld: warning: libopencv_core.so.4.5d, needed by /opt/ros/humble/lib/libcv_bridge.so, may conflict with libopencv_core.so.413
+---
+Finished <<< vehicle_simulator [1min 25s]
+--- stderr: far_planner
+CMake Warning (dev) at CMakeLists.txt:24 (find_package):
+  Policy CMP0074 is not set: find_package uses <PackageName>_ROOT variables.
+  Run "cmake --help-policy CMP0074" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+
+  CMake variable PCL_ROOT is set to:
+
+    /usr
+
+  For compatibility, CMake is ignoring the variable.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+In file included from /home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/src/far_planner.cpp:9:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/include/far_planner/far_planner.h: In member function ‘void FARMaster::ResetGraphCallBack(std_msgs::msg::Empty_<std::allocator<void> >::SharedPtr)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/include/far_planner/far_planner.h:154:74: warning: unused parameter ‘msg’ [-Wunused-parameter]
+  154 |     inline void ResetGraphCallBack(const std_msgs::msg::Empty::SharedPtr msg) {
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~
+In file included from /home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/src/far_planner.cpp:9:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/include/far_planner/far_planner.h: In member function ‘void FARMaster::ReadFileCommand(std_msgs::msg::String_<std::allocator<void> >::SharedPtr)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/include/far_planner/far_planner.h:193:72: warning: unused parameter ‘msg’ [-Wunused-parameter]
+  193 |     inline void ReadFileCommand(const std_msgs::msg::String::SharedPtr msg) {
+      |                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/include/far_planner/far_planner.h: In member function ‘void FARMaster::SaveFileCommand(std_msgs::msg::String_<std::allocator<void> >::SharedPtr)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/include/far_planner/far_planner.h:200:72: warning: unused parameter ‘msg’ [-Wunused-parameter]
+  200 |     inline void SaveFileCommand(const std_msgs::msg::String::SharedPtr msg) {
+      |                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/src/contour_detector.cpp: In member function ‘void ContourDetector::ShowCornerImage(const cv::Mat&, const PointCloudPtr&)’:
+/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/route_planner/far_planner/src/contour_detector.cpp:94:54: warning: unused parameter ‘img_mat’ [-Wunused-parameter]
+   94 | void ContourDetector::ShowCornerImage(const cv::Mat& img_mat, const PointCloudPtr& pc) {
+      |                                       ~~~~~~~~~~~~~~~^~~~~~~
+---
+[Processing: far_planner]
+[Processing: far_planner]
+Finished <<< far_planner [2min 51s]
+
+Summary: 19 packages finished [3min 32s]
+  10 packages had stderr output: boundary_handler far_planner goalpoint_rviz_plugin graph_decoder local_planner ros_tcp_endpoint serial teleop_joy_controller vehicle_simulator waypoint_rviz_plugin
