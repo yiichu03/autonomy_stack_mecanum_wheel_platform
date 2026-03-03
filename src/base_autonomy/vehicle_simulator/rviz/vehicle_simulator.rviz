@@ -439,6 +439,13 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: waypoint
+    - Class: goalpoint_rviz_plugin/GoalpointTool
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: goal_point
   Transformation:
     Current:
       Class: rviz_default_plugins/TF
