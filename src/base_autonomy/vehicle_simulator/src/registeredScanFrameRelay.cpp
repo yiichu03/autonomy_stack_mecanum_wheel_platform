@@ -13,13 +13,17 @@ public:
   RegisteredScanFrameRelay()
   : Node("registered_scan_frame_relay")
   {
+    auto pub_qos = rclcpp::QoS(rclcpp::KeepLast(5));
+    pub_qos.reliable();
+    pub_qos.durability_volatile();
+
     sub_cloud_ = create_subscription<sensor_msgs::msg::PointCloud2>(
         "/registered_scan_raw",
         rclcpp::SensorDataQoS(),
         std::bind(&RegisteredScanFrameRelay::cloudHandler, this, std::placeholders::_1));
     pub_cloud_ = create_publisher<sensor_msgs::msg::PointCloud2>(
         "/registered_scan",
-        rclcpp::SensorDataQoS());
+        pub_qos);
 
     RCLCPP_INFO(
         get_logger(),
