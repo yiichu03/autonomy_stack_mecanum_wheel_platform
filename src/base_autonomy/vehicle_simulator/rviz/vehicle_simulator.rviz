@@ -275,6 +275,66 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /way_point
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Goalpoint
+      Namespaces:
+        clear_nodes: false
+        free_goal: true
+        free_odom_position: false
+        last_nav_node: false
+        original_goal: true
+        out_contour: false
+        waypoint: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /viz_node_topic
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: GlobalPath
+      Namespaces:
+        global_path: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /viz_path_topic
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: VGraph
+      Namespaces:
+        angle_direct: false
+        boundary_edge: false
+        boundary_vertex: false
+        freespace_vertex: false
+        freespace_vgraph: true
+        frontier_vertex: false
+        global_vertex: false
+        global_vgraph: false
+        localrange_vertex: false
+        odom_edge: false
+        polygon_edge: true
+        to_goal_edge: false
+        trajectory_edge: false
+        trajectory_vertex: false
+        updating_vertex: false
+        vertex_angle: false
+        vertices_matches: false
+        visibility_edge: false
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /viz_graph_topic
+      Value: true
     - Alpha: 1
       Class: rviz_default_plugins/Polygon
       Color: 0; 255; 0
