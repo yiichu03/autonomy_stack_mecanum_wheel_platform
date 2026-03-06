@@ -111,7 +111,7 @@ ros2 launch vehicle_simulator system_scout_hesai_with_far_planner.launch.py
 
 ```bash
 source /opt/ros/humble/setup.bash
-ros2 topic echo /cmd_vel
+ros2 topic echo /cmd_velniniss
 ```
 
 没有 waypoint 时输出全为零，这是正常的。

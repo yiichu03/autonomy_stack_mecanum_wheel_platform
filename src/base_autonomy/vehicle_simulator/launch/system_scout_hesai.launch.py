@@ -217,6 +217,16 @@ def generate_launch_description():
         arguments=['0', '0', '0', '0.5', '-0.5', '0.5', '0.5', 'body', 'sensor'],
     )
 
+    # sensor_at_scan → vehicle：让 /path 和 /free_paths (frame_id="vehicle") 在 RViz 中正确显示
+    # sensor_at_scan 由 sensorScanGeneration 动态广播 (map→sensor_at_scan)，
+    # vehicle 与 sensor_at_scan 代表同一物理位置（机器人当前传感器所在处）
+    tf_sensor_at_scan_to_vehicle = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='tf_sensor_at_scan_to_vehicle',
+        arguments=['0', '0', '0', '0', '0', '0', '1', 'sensor_at_scan', 'vehicle'],
+    )
+
     # ------------------------------------------------------------------ #
     #  组装 LaunchDescription
     # ------------------------------------------------------------------ #
@@ -236,6 +246,7 @@ def generate_launch_description():
 
     ld.add_action(tf_map_to_camera_init)
     ld.add_action(tf_body_to_sensor)
+    ld.add_action(tf_sensor_at_scan_to_vehicle)
     ld.add_action(start_fastlio)
     ld.add_action(start_odom_relay)
     ld.add_action(start_sensor_scan_generation)
