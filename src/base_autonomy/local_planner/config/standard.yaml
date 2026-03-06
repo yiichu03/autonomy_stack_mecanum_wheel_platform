@@ -8,5 +8,10 @@ pathFollower:
     yawRateGain: 4.0
     stopYawRateGain: 6.0
     maxYawRate: 60.0
-    dirDiffThre: 0.15
+    dirDiffThre: 0.30
     stopDisThre: 0.15
+    preservePathProgressOnUpdate: true
+    pathProgressMatchThre: 0.35
+    suppressShortPathUpdates: true
+    pathUpdateMinStableSize: 30
+    pathUpdateHoldEndDisThre: 0.60

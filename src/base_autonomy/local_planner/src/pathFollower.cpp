@@ -82,6 +82,11 @@ bool manualMode = false;
 bool autonomyMode = false;
 double autonomySpeed = 1.0;
 double joyToSpeedDelay = 2.0;
+bool preservePathProgressOnUpdate = true;
+double pathProgressMatchThre = 0.35;
+bool suppressShortPathUpdates = true;
+int pathUpdateMinStableSize = 30;
+double pathUpdateHoldEndDisThre = 0.6;
 bool enableDebugLog = false;
 string debugLogDir = "/tmp/autonomy_stack_debug";
 int debugLogDecimation = 10;
@@ -127,6 +132,24 @@ rclcpp::Node::SharedPtr nh;
 std::ofstream pathFollowerDebugFile;
 bool pathFollowerPathUpdated = false;
 int pathFollowerDebugLogCounter = 0;
+int pathUpdateMatchID = -1;
+float pathUpdateMatchDis = -1.0f;
+
+enum PathUpdateMode {
+  kPathUpdateNone = -1,
+  kPathUpdateReset = 0,
+  kPathUpdatePreserve = 1,
+  kPathUpdateSuppress = 2,
+};
+
+int pathUpdateMode = kPathUpdateNone;
+
+float wrapAngle(float ang)
+{
+  while (ang > PI) ang -= 2.0f * PI;
+  while (ang < -PI) ang += 2.0f * PI;
+  return ang;
+}
 
 bool ensureDirectoryTree(const std::string& dirPath)
 {
@@ -165,7 +188,7 @@ bool initPathFollowerDebugFile()
         << "event,time,path_size,path_point_id,vehicle_x,vehicle_y,vehicle_yaw,"
         << "target_x,target_y,target_dis,end_dis,dir_diff,nav_fwd,manual_mode,"
         << "autonomy_mode,joy_speed,slow_down,safety_stop,vehicle_speed,vehicle_yaw_rate,"
-        << "cmd_x,cmd_y,cmd_yaw\n";
+        << "cmd_x,cmd_y,cmd_yaw,path_update_mode,path_update_match_id,path_update_match_dis\n";
   }
 
   return true;
@@ -197,6 +220,73 @@ void odomHandler(const nav_msgs::msg::Odometry::ConstSharedPtr odomIn)
 void pathHandler(const nav_msgs::msg::Path::ConstSharedPtr pathIn)
 {
   int pathSize = pathIn->poses.size();
+  int nextPathPointID = 0;
+  pathUpdateMatchID = -1;
+  pathUpdateMatchDis = -1.0f;
+  pathUpdateMode = kPathUpdateReset;
+
+  if (pathInit && !path.poses.empty() && pathSize > 1) {
+    float vehicleXRel = cos(vehicleYawRec) * (vehicleX - vehicleXRec)
+                      + sin(vehicleYawRec) * (vehicleY - vehicleYRec);
+    float vehicleYRel = -sin(vehicleYawRec) * (vehicleX - vehicleXRec)
+                      + cos(vehicleYawRec) * (vehicleY - vehicleYRec);
+
+    int oldPathSize = path.poses.size();
+    int oldTargetPointID = pathPointID;
+    if (oldTargetPointID < 0) oldTargetPointID = 0;
+    if (oldTargetPointID >= oldPathSize) oldTargetPointID = oldPathSize - 1;
+
+    float disX = 0.0f, disY = 0.0f, dis = 0.0f;
+    while (oldTargetPointID < oldPathSize - 1) {
+      disX = path.poses[oldTargetPointID].pose.position.x - vehicleXRel;
+      disY = path.poses[oldTargetPointID].pose.position.y - vehicleYRel;
+      dis = sqrt(disX * disX + disY * disY);
+      if (dis < lookAheadDis) oldTargetPointID++;
+      else break;
+    }
+
+    float oldTargetX = path.poses[oldTargetPointID].pose.position.x - vehicleXRel;
+    float oldTargetY = path.poses[oldTargetPointID].pose.position.y - vehicleYRel;
+    float oldEndX = path.poses[oldPathSize - 1].pose.position.x - vehicleXRel;
+    float oldEndY = path.poses[oldPathSize - 1].pose.position.y - vehicleYRel;
+    float oldEndDis = sqrt(oldEndX * oldEndX + oldEndY * oldEndY);
+
+    float deltaYaw = wrapAngle(vehicleYaw - vehicleYawRec);
+    float cosDeltaYaw = cos(deltaYaw);
+    float sinDeltaYaw = sin(deltaYaw);
+
+    float oldTargetXCur = cosDeltaYaw * oldTargetX + sinDeltaYaw * oldTargetY;
+    float oldTargetYCur = -sinDeltaYaw * oldTargetX + cosDeltaYaw * oldTargetY;
+
+    float bestDis = 1e9;
+    int bestID = 0;
+    for (int i = 0; i < pathSize; i++) {
+      float dx = pathIn->poses[i].pose.position.x - oldTargetXCur;
+      float dy = pathIn->poses[i].pose.position.y - oldTargetYCur;
+      float candDis = sqrt(dx * dx + dy * dy);
+      if (candDis < bestDis) {
+        bestDis = candDis;
+        bestID = i;
+      }
+    }
+
+    pathUpdateMatchID = bestID;
+    pathUpdateMatchDis = bestDis;
+
+    if (preservePathProgressOnUpdate && bestDis < pathProgressMatchThre) {
+      nextPathPointID = bestID;
+      pathUpdateMode = kPathUpdatePreserve;
+    } else if (suppressShortPathUpdates && pathSize < pathUpdateMinStableSize && oldEndDis > pathUpdateHoldEndDisThre) {
+      pathFollowerPathUpdated = true;
+      pathUpdateMode = kPathUpdateSuppress;
+      RCLCPP_INFO_THROTTLE(
+          nh->get_logger(), *nh->get_clock(), 1000,
+          "Suppressing short path update: size=%d oldEnd=%.2f match=%.2f",
+          pathSize, oldEndDis, bestDis);
+      return;
+    }
+  }
+
   path.poses.resize(pathSize);
   for (int i = 0; i < pathSize; i++) {
     path.poses[i].pose.position.x = pathIn->poses[i].pose.position.x;
@@ -211,10 +301,13 @@ void pathHandler(const nav_msgs::msg::Path::ConstSharedPtr pathIn)
   vehiclePitchRec = vehiclePitch;
   vehicleYawRec = vehicleYaw;
 
-  pathPointID = 0;
+  pathPointID = nextPathPointID;
   pathInit = true;
   pathFollowerPathUpdated = true;
-  RCLCPP_INFO(nh->get_logger(), "Path update received: %d points", pathSize);
+  RCLCPP_INFO_THROTTLE(
+      nh->get_logger(), *nh->get_clock(), 1000,
+      "Path update received: %d points, mode=%d match_id=%d match_dis=%.2f",
+      pathSize, pathUpdateMode, pathUpdateMatchID, pathUpdateMatchDis);
 }
 
 void joystickHandler(const sensor_msgs::msg::Joy::ConstSharedPtr joy)
@@ -309,6 +402,11 @@ int main(int argc, char** argv)
   nh->declare_parameter<bool>("autonomyMode", autonomyMode);
   nh->declare_parameter<double>("autonomySpeed", autonomySpeed);
   nh->declare_parameter<double>("joyToSpeedDelay", joyToSpeedDelay);
+  nh->declare_parameter<bool>("preservePathProgressOnUpdate", preservePathProgressOnUpdate);
+  nh->declare_parameter<double>("pathProgressMatchThre", pathProgressMatchThre);
+  nh->declare_parameter<bool>("suppressShortPathUpdates", suppressShortPathUpdates);
+  nh->declare_parameter<int>("pathUpdateMinStableSize", pathUpdateMinStableSize);
+  nh->declare_parameter<double>("pathUpdateHoldEndDisThre", pathUpdateHoldEndDisThre);
   nh->declare_parameter<bool>("enableDebugLog", enableDebugLog);
   nh->declare_parameter<std::string>("debugLogDir", debugLogDir);
   nh->declare_parameter<int>("debugLogDecimation", debugLogDecimation);
@@ -347,6 +445,11 @@ int main(int argc, char** argv)
   nh->get_parameter("autonomyMode", autonomyMode);
   nh->get_parameter("autonomySpeed", autonomySpeed);
   nh->get_parameter("joyToSpeedDelay", joyToSpeedDelay);
+  nh->get_parameter("preservePathProgressOnUpdate", preservePathProgressOnUpdate);
+  nh->get_parameter("pathProgressMatchThre", pathProgressMatchThre);
+  nh->get_parameter("suppressShortPathUpdates", suppressShortPathUpdates);
+  nh->get_parameter("pathUpdateMinStableSize", pathUpdateMinStableSize);
+  nh->get_parameter("pathUpdateHoldEndDisThre", pathUpdateHoldEndDisThre);
   nh->get_parameter("enableDebugLog", enableDebugLog);
   nh->get_parameter("debugLogDir", debugLogDir);
   nh->get_parameter("debugLogDecimation", debugLogDecimation);
@@ -427,10 +530,7 @@ int main(int argc, char** argv)
       float pathDir = atan2(disY, disX);
 
       float dirDiff = vehicleYaw - vehicleYawRec - pathDir;
-      if (dirDiff > PI) dirDiff -= 2 * PI;
-      else if (dirDiff < -PI) dirDiff += 2 * PI;
-      if (dirDiff > PI) dirDiff -= 2 * PI;
-      else if (dirDiff < -PI) dirDiff += 2 * PI;
+      dirDiff = wrapAngle(dirDiff);
 
       if (twoWayDrive) {
         double time = nh->now().seconds();
@@ -536,11 +636,15 @@ int main(int argc, char** argv)
                                 << vehicleYawRate << ","
                                 << cmd_vel.linear.x << ","
                                 << cmd_vel.linear.y << ","
-                                << cmd_vel.angular.z << "\n";
+                                << cmd_vel.angular.z << ","
+                                << pathUpdateMode << ","
+                                << pathUpdateMatchID << ","
+                                << pathUpdateMatchDis << "\n";
           pathFollowerDebugFile.flush();
         }
         pathFollowerDebugLogCounter++;
         pathFollowerPathUpdated = false;
+        pathUpdateMode = kPathUpdateNone;
 
         RCLCPP_INFO_THROTTLE(
             nh->get_logger(), *nh->get_clock(), 1000,
