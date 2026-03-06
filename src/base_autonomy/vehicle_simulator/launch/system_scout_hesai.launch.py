@@ -32,9 +32,10 @@ Scout Mini + Hesai XT32 + RealSense D455 IMU 专用 launch 文件。
 """
 
 import os
+from datetime import datetime
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter
@@ -53,6 +54,19 @@ def generate_launch_description():
     vehicleY        = LaunchConfiguration('vehicleY')
     maxSpeed        = LaunchConfiguration('maxSpeed')
     checkTerrainConn = LaunchConfiguration('checkTerrainConn')
+    enableDebugLog  = LaunchConfiguration('enableDebugLog')
+    debugLogDir     = LaunchConfiguration('debugLogDir')
+    debugLogDecimation = LaunchConfiguration('debugLogDecimation')
+
+    workspace_root = os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.dirname(get_package_share_directory('vehicle_simulator')))))
+    default_debug_log_dir = os.path.join(
+        workspace_root,
+        'runtime_logs',
+        'navigation_debug',
+        datetime.now().strftime('%Y%m%d_%H%M%S'))
 
     declare_use_sim_time      = DeclareLaunchArgument('use_sim_time',      default_value='false',  description='true=bag 回放，false=实车实时')
     declare_sensorOffsetX     = DeclareLaunchArgument('sensorOffsetX',     default_value='0.0',    description='LiDAR 原点 = Body frame 原点（B_p_L=[0,0,0]），前向偏移为 0')
@@ -62,6 +76,9 @@ def generate_launch_description():
     declare_vehicleY          = DeclareLaunchArgument('vehicleY',          default_value='0.0',    description='初始目标点 Y')
     declare_maxSpeed          = DeclareLaunchArgument('maxSpeed',          default_value='0.5',    description='最大速度 (m/s)，初期保守值，Scout Mini 上限约 1.5 m/s')
     declare_checkTerrainConn  = DeclareLaunchArgument('checkTerrainConn',  default_value='true',   description='')
+    declare_enable_debug_log  = DeclareLaunchArgument('enableDebugLog',    default_value='true',   description='是否记录规划/控制调试 CSV 日志')
+    declare_debug_log_dir     = DeclareLaunchArgument('debugLogDir',       default_value=default_debug_log_dir, description='规划/控制调试日志目录')
+    declare_debug_log_decimation = DeclareLaunchArgument('debugLogDecimation', default_value='10', description='调试日志采样降频系数')
 
     # ------------------------------------------------------------------ #
     #  FAST-LIO2（在本 launch 内直接以 Node 方式启动，以便设置 remappings）
@@ -151,6 +168,9 @@ def generate_launch_description():
             'autonomyMode':  'false',
             'vehicleLength': '0.70',
             'vehicleWidth':  '0.60',
+            'enableDebugLog': enableDebugLog,
+            'debugLogDir':    debugLogDir,
+            'debugLogDecimation': debugLogDecimation,
         }.items(),
     )
 
@@ -223,6 +243,10 @@ def generate_launch_description():
     ld.add_action(declare_vehicleY)
     ld.add_action(declare_maxSpeed)
     ld.add_action(declare_checkTerrainConn)
+    ld.add_action(declare_enable_debug_log)
+    ld.add_action(declare_debug_log_dir)
+    ld.add_action(declare_debug_log_decimation)
+    ld.add_action(LogInfo(msg=['Navigation debug logs: ', debugLogDir]))
 
     # 全局设置 use_sim_time，作用于本 launch 内所有后续节点
     ld.add_action(SetParameter(name='use_sim_time', value=use_sim_time))

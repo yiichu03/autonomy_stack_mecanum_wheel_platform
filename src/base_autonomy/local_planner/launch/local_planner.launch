@@ -14,6 +14,9 @@
   <arg name="joyToSpeedDelay" default="2.0"/>
   <arg name="goalX" default="0.0"/>
   <arg name="goalY" default="0.0"/>
+  <arg name="enableDebugLog" default="false"/>
+  <arg name="debugLogDir" default="/tmp/autonomy_stack_debug"/>
+  <arg name="debugLogDecimation" default="10"/>
 
   <node pkg="local_planner" exec="localPlanner" name="localPlanner" output="screen">
     <param from="$(find-pkg-share local_planner)/config/$(var config).yaml"/>
@@ -61,6 +64,9 @@
     <param name="freezeTime" value="0.0" />
     <param name="goalX" value="$(var goalX)" />
     <param name="goalY" value="$(var goalY)" />
+    <param name="enableDebugLog" value="$(var enableDebugLog)" />
+    <param name="debugLogDir" value="$(var debugLogDir)" />
+    <param name="debugLogDecimation" value="$(var debugLogDecimation)" />
   </node>
 
   <node pkg="local_planner" exec="pathFollower" name="pathFollower" output="screen">
@@ -93,6 +99,9 @@
     <param name="autonomyMode" value="$(var autonomyMode)" />
     <param name="autonomySpeed" value="$(var autonomySpeed)" />
     <param name="joyToSpeedDelay" value="$(var joyToSpeedDelay)" />
+    <param name="enableDebugLog" value="$(var enableDebugLog)" />
+    <param name="debugLogDir" value="$(var debugLogDir)" />
+    <param name="debugLogDecimation" value="$(var debugLogDecimation)" />
   </node>
 
   <node pkg="tf2_ros" exec="static_transform_publisher" name="vehicleTransPublisher" args="-$(var sensorOffsetX) -$(var sensorOffsetY) 0 0 0 0 /sensor /vehicle"/>

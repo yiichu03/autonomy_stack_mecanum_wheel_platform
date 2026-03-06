@@ -118,6 +118,16 @@ ros2 topic echo /cmd_vel
 
 ---
 
+### 终端 G 
+sudo modprobe gs_usb
+sudo ip link set can2 up type can bitrate 500000
+candump can2
+ros2 launch scout_base scout_mini_base.launch.py port_name:=can2
+
+ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.00}, angular: {z: 0.0}}" # 车应该轻微前移，立刻停止
+
+---
+
 ## RViz 操作
 
 ### 方案一（Base Autonomy）
@@ -143,13 +153,6 @@ ros2 topic echo /way_point
 ros2 topic echo /cmd_vel
 ```
 
-sudo modprobe gs_usb
-sudo ip link set can2 up type can bitrate 500000
-candump can2
-ros2 launch scout_base scout_mini_base.launch.py port_name:=can2
-
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.00}, angular: {z: 0.0}}"
-# 车应该轻微前移，立刻停止
 ---
 
 ## /cmd_vel 判断标准

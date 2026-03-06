@@ -2,6 +2,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <chrono>
+#include <cerrno>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/time.hpp"
@@ -76,6 +82,9 @@ bool manualMode = false;
 bool autonomyMode = false;
 double autonomySpeed = 1.0;
 double joyToSpeedDelay = 2.0;
+bool enableDebugLog = false;
+string debugLogDir = "/tmp/autonomy_stack_debug";
+int debugLogDecimation = 10;
 
 float joySpeed = 0;
 float joySpeedRaw = 0;
@@ -115,6 +124,52 @@ bool serialOpen = false;
 
 nav_msgs::msg::Path path;
 rclcpp::Node::SharedPtr nh;
+std::ofstream pathFollowerDebugFile;
+bool pathFollowerPathUpdated = false;
+int pathFollowerDebugLogCounter = 0;
+
+bool ensureDirectoryTree(const std::string& dirPath)
+{
+  if (dirPath.empty()) return false;
+
+  std::string currentPath;
+  if (dirPath[0] == '/') currentPath = "/";
+
+  std::stringstream pathStream(dirPath);
+  std::string part;
+  while (std::getline(pathStream, part, '/')) {
+    if (part.empty()) continue;
+    if (!currentPath.empty() && currentPath.back() != '/') currentPath += "/";
+    currentPath += part;
+
+    if (mkdir(currentPath.c_str(), 0775) != 0 && errno != EEXIST) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool initPathFollowerDebugFile()
+{
+  if (!enableDebugLog) return false;
+  if (!ensureDirectoryTree(debugLogDir)) return false;
+
+  const std::string logPath = debugLogDir + "/path_follower.csv";
+  const bool fileExists = static_cast<bool>(std::ifstream(logPath));
+  pathFollowerDebugFile.open(logPath, std::ios::out | std::ios::app);
+  if (!pathFollowerDebugFile.is_open()) return false;
+
+  if (!fileExists) {
+    pathFollowerDebugFile
+        << "event,time,path_size,path_point_id,vehicle_x,vehicle_y,vehicle_yaw,"
+        << "target_x,target_y,target_dis,end_dis,dir_diff,nav_fwd,manual_mode,"
+        << "autonomy_mode,joy_speed,slow_down,safety_stop,vehicle_speed,vehicle_yaw_rate,"
+        << "cmd_x,cmd_y,cmd_yaw\n";
+  }
+
+  return true;
+}
 
 void odomHandler(const nav_msgs::msg::Odometry::ConstSharedPtr odomIn)
 {
@@ -158,6 +213,8 @@ void pathHandler(const nav_msgs::msg::Path::ConstSharedPtr pathIn)
 
   pathPointID = 0;
   pathInit = true;
+  pathFollowerPathUpdated = true;
+  RCLCPP_INFO(nh->get_logger(), "Path update received: %d points", pathSize);
 }
 
 void joystickHandler(const sensor_msgs::msg::Joy::ConstSharedPtr joy)
@@ -252,6 +309,9 @@ int main(int argc, char** argv)
   nh->declare_parameter<bool>("autonomyMode", autonomyMode);
   nh->declare_parameter<double>("autonomySpeed", autonomySpeed);
   nh->declare_parameter<double>("joyToSpeedDelay", joyToSpeedDelay);
+  nh->declare_parameter<bool>("enableDebugLog", enableDebugLog);
+  nh->declare_parameter<std::string>("debugLogDir", debugLogDir);
+  nh->declare_parameter<int>("debugLogDecimation", debugLogDecimation);
 
   nh->get_parameter("realRobot", realRobot);
   nh->get_parameter("serialPort", serialPort);
@@ -287,6 +347,9 @@ int main(int argc, char** argv)
   nh->get_parameter("autonomyMode", autonomyMode);
   nh->get_parameter("autonomySpeed", autonomySpeed);
   nh->get_parameter("joyToSpeedDelay", joyToSpeedDelay);
+  nh->get_parameter("enableDebugLog", enableDebugLog);
+  nh->get_parameter("debugLogDir", debugLogDir);
+  nh->get_parameter("debugLogDecimation", debugLogDecimation);
 
   auto subOdom = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, odomHandler);
 
@@ -305,6 +368,12 @@ int main(int argc, char** argv)
   geometry_msgs::msg::Twist cmd_vel;
   geometry_msgs::msg::TwistStamped cmd_vel_stamped;
   cmd_vel_stamped.header.frame_id = "vehicle";
+
+  if (initPathFollowerDebugFile()) {
+    RCLCPP_INFO(nh->get_logger(), "Path follower debug log: %s/path_follower.csv", debugLogDir.c_str());
+  } else if (enableDebugLog) {
+    RCLCPP_WARN(nh->get_logger(), "Path follower debug log disabled, cannot open %s/path_follower.csv", debugLogDir.c_str());
+  }
 
   if (autonomyMode) {
     joySpeed = autonomySpeed / maxSpeed;
@@ -445,6 +514,39 @@ int main(int argc, char** argv)
         cmd_vel_stamped.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
         cmd_vel_stamped.twist = cmd_vel;
         pubSpeedStamped->publish(cmd_vel_stamped);
+
+        const int pathFollowerLogStride = debugLogDecimation > 0 ? debugLogDecimation : 1;
+        if (enableDebugLog && pathFollowerDebugFile.is_open() &&
+            (pathFollowerPathUpdated || pathFollowerDebugLogCounter % pathFollowerLogStride == 0)) {
+          pathFollowerDebugFile << std::fixed << std::setprecision(3)
+                                << (pathFollowerPathUpdated ? "path_update" : "control") << ","
+                                << odomTime << ","
+                                << pathSize << ","
+                                << pathPointID << ","
+                                << vehicleX << "," << vehicleY << "," << vehicleYaw << ","
+                                << disX << "," << disY << "," << dis << "," << endDis << ","
+                                << dirDiff << ","
+                                << (navFwd ? 1 : 0) << ","
+                                << (manualMode ? 1 : 0) << ","
+                                << (autonomyMode ? 1 : 0) << ","
+                                << joySpeed << ","
+                                << slowDown << ","
+                                << safetyStop << ","
+                                << vehicleSpeed << ","
+                                << vehicleYawRate << ","
+                                << cmd_vel.linear.x << ","
+                                << cmd_vel.linear.y << ","
+                                << cmd_vel.angular.z << "\n";
+          pathFollowerDebugFile.flush();
+        }
+        pathFollowerDebugLogCounter++;
+        pathFollowerPathUpdated = false;
+
+        RCLCPP_INFO_THROTTLE(
+            nh->get_logger(), *nh->get_clock(), 1000,
+            "controller pathSize=%d pathPoint=%d dis=%.2f endDis=%.2f dirDiff=%.2f speed=%.2f yawRate=%.2f cmd=(%.2f, %.2f, %.2f)",
+            pathSize, pathPointID, dis, endDis, dirDiff, vehicleSpeed, vehicleYawRate,
+            cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z);
         pubSkipCount = pubSkipNum;
 
         if (realRobot) {

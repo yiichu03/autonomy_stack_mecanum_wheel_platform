@@ -3,7 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <chrono>
+#include <cerrno>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/time.hpp"
 #include "rclcpp/clock.hpp"
@@ -93,6 +99,9 @@ double goalClearRange = 0.5;
 double goalBehindRange = 0.8;
 double goalX = 0;
 double goalY = 0;
+bool enableDebugLog = false;
+string debugLogDir = "/tmp/autonomy_stack_debug";
+int debugLogDecimation = 10;
 
 float joySpeed = 0;
 float joySpeedRaw = 0;
@@ -145,6 +154,53 @@ float vehicleX = 0, vehicleY = 0, vehicleZ = 0;
 
 pcl::VoxelGrid<pcl::PointXYZI> laserDwzFilter, terrainDwzFilter;
 rclcpp::Node::SharedPtr nh;
+std::ofstream plannerDebugFile;
+bool plannerGoalUpdated = false;
+int plannerDebugLogCounter = 0;
+
+bool ensureDirectoryTree(const std::string& dirPath)
+{
+  if (dirPath.empty()) return false;
+
+  std::string currentPath;
+  if (dirPath[0] == '/') currentPath = "/";
+
+  std::stringstream pathStream(dirPath);
+  std::string part;
+  while (std::getline(pathStream, part, '/')) {
+    if (part.empty()) continue;
+    if (!currentPath.empty() && currentPath.back() != '/') currentPath += "/";
+    currentPath += part;
+
+    if (mkdir(currentPath.c_str(), 0775) != 0 && errno != EEXIST) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool initPlannerDebugFile()
+{
+  if (!enableDebugLog) return false;
+  if (!ensureDirectoryTree(debugLogDir)) return false;
+
+  const std::string logPath = debugLogDir + "/local_planner.csv";
+  const bool fileExists = static_cast<bool>(std::ifstream(logPath));
+  plannerDebugFile.open(logPath, std::ios::out | std::ios::app);
+  if (!plannerDebugFile.is_open()) return false;
+
+  if (!fileExists) {
+    plannerDebugFile
+        << "event,time,vehicle_x,vehicle_y,vehicle_yaw,"
+        << "goal_x,goal_y,goal_rel_x,goal_rel_y,goal_rel_dis,joy_dir,"
+        << "planner_cloud_points,check_obstacle,freeze_status,preselected_group,"
+        << "selected_group_raw,selected_rot_deg,selected_path_group,path_found,"
+        << "path_points,path_scale,path_range,penalty_score,slow_level\n";
+  }
+
+  return true;
+}
 
 void odometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr odom)
 {
@@ -259,6 +315,8 @@ void goalHandler(const geometry_msgs::msg::PointStamped::ConstSharedPtr goal)
 {
   goalX = goal->point.x;
   goalY = goal->point.y;
+  plannerGoalUpdated = true;
+  RCLCPP_INFO(nh->get_logger(), "Waypoint received: x=%.2f y=%.2f z=%.2f", goal->point.x, goal->point.y, goal->point.z);
 }
 
 void speedHandler(const std_msgs::msg::Float32::ConstSharedPtr speed)
@@ -558,6 +616,9 @@ int main(int argc, char** argv)
   nh->declare_parameter<double>("goalBehindRange", goalBehindRange);
   nh->declare_parameter<double>("goalX", goalX);
   nh->declare_parameter<double>("goalY", goalY);
+  nh->declare_parameter<bool>("enableDebugLog", enableDebugLog);
+  nh->declare_parameter<std::string>("debugLogDir", debugLogDir);
+  nh->declare_parameter<int>("debugLogDecimation", debugLogDecimation);
 
   nh->get_parameter("pathFolder", pathFolder);
   nh->get_parameter("vehicleLength", vehicleLength);
@@ -604,6 +665,9 @@ int main(int argc, char** argv)
   nh->get_parameter("goalBehindRange", goalBehindRange);
   nh->get_parameter("goalX", goalX);
   nh->get_parameter("goalY", goalY);
+  nh->get_parameter("enableDebugLog", enableDebugLog);
+  nh->get_parameter("debugLogDir", debugLogDir);
+  nh->get_parameter("debugLogDecimation", debugLogDecimation);
 
   auto subOdometry = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, odometryHandler);
 
@@ -625,6 +689,7 @@ int main(int argc, char** argv)
 
   auto pubSlowDown = nh->create_publisher<std_msgs::msg::Int8> ("/slow_down", 5);
   std_msgs::msg::Int8 slow;
+  slow.data = 0;
 
   auto pubPath = nh->create_publisher<nav_msgs::msg::Path>("/path", 5);
   nav_msgs::msg::Path path;
@@ -670,6 +735,11 @@ int main(int argc, char** argv)
   readCorrespondences();
 
   RCLCPP_INFO(nh->get_logger(), "Initialization complete.");
+  if (initPlannerDebugFile()) {
+    RCLCPP_INFO(nh->get_logger(), "Planner debug log: %s/local_planner.csv", debugLogDir.c_str());
+  } else if (enableDebugLog) {
+    RCLCPP_WARN(nh->get_logger(), "Planner debug log disabled, cannot open %s/local_planner.csv", debugLogDir.c_str());
+  }
 
   rclcpp::Rate rate(100);
   bool status = rclcpp::ok();
@@ -718,6 +788,7 @@ int main(int argc, char** argv)
           plannerCloudCrop->push_back(point);
         }
       }
+      int plannerCloudCropSize = plannerCloudCrop->points.size();
 
       int boundaryCloudSize = boundaryCloud->points.size();
       for (int i = 0; i < boundaryCloudSize; i++) {
@@ -749,15 +820,18 @@ int main(int argc, char** argv)
         }
       }
 
+      slow.data = 0;
       float pathRange = adjacentRange;
       if (pathRangeBySpeed) pathRange = adjacentRange * joySpeed;
       if (pathRange < minPathRange) pathRange = minPathRange;
       float relativeGoalDis = adjacentRange;
+      float relativeGoalX = 0;
+      float relativeGoalY = 0;
 
       int preSelectedGroupID = -1;
       if (autonomyMode) {
-        float relativeGoalX = ((goalX - vehicleX) * cosVehicleYaw + (goalY - vehicleY) * sinVehicleYaw);
-        float relativeGoalY = (-(goalX - vehicleX) * sinVehicleYaw + (goalY - vehicleY) * cosVehicleYaw);
+        relativeGoalX = ((goalX - vehicleX) * cosVehicleYaw + (goalY - vehicleY) * sinVehicleYaw);
+        relativeGoalY = (-(goalX - vehicleX) * sinVehicleYaw + (goalY - vehicleY) * cosVehicleYaw);
 
         relativeGoalDis = sqrt(relativeGoalX * relativeGoalX + relativeGoalY * relativeGoalY);
         joyDir = atan2(relativeGoalY, relativeGoalX) * 180 / PI;
@@ -798,6 +872,13 @@ int main(int argc, char** argv)
       float defPathScale = pathScale;
       if (pathScaleBySpeed) pathScale = defPathScale * joySpeed;
       if (pathScale < minPathScale) pathScale = minPathScale;
+      int selectedGroupRaw = -1;
+      int selectedPathGroup = -1;
+      float selectedRotDeg = 0.0;
+      int selectedPathPointCount = 0;
+      float finalPenaltyScore = 0.0;
+      float finalPathRange = pathRange;
+      float finalPathScale = pathScale;
 
       while (pathScale >= minPathScale && pathRange >= minPathRange) {
         for (int i = 0; i < 36 * pathNum; i++) {
@@ -814,7 +895,6 @@ int main(int argc, char** argv)
         float minObsAngCCW = 180.0;
         float diameter = sqrt(vehicleLength / 2.0 * vehicleLength / 2.0 + vehicleWidth / 2.0 * vehicleWidth / 2.0);
         float angOffset = atan2(vehicleWidth, vehicleLength) * 180.0 / PI;
-        int plannerCloudCropSize = plannerCloudCrop->points.size();
         for (int i = 0; i < plannerCloudCropSize; i++) {
           float x = plannerCloudCrop->points[i].x / pathScale;
           float y = plannerCloudCrop->points[i].y / pathScale;
@@ -937,13 +1017,17 @@ int main(int argc, char** argv)
           else if (selectedPathNum < slowPathNumThre && fabs(selectedGroupID - 129) > slowGroupNumThre) slow.data = 3;
           else slow.data = 0;
           pubSlowDown->publish(slow);
+          finalPenaltyScore = penaltyScore;
         }
 
         if (selectedGroupID >= 0) {
+          selectedGroupRaw = selectedGroupID;
           int rotDir = int(selectedGroupID / groupNum);
           float rotAng = (10.0 * rotDir - 180.0) * PI / 180;
+          selectedRotDeg = 10.0 * rotDir - 180.0;
 
           selectedGroupID = selectedGroupID % groupNum;
+          selectedPathGroup = selectedGroupID;
           int selectedPathLength = startPaths[selectedGroupID]->points.size();
           path.poses.resize(selectedPathLength);
           for (int i = 0; i < selectedPathLength; i++) {
@@ -961,6 +1045,7 @@ int main(int argc, char** argv)
               break;
             }
           }
+          selectedPathPointCount = path.poses.size();
 
           path.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
           path.header.frame_id = "vehicle";
@@ -1023,6 +1108,8 @@ int main(int argc, char** argv)
           }
         } else {
           pathFound = true;
+          finalPathRange = pathRange;
+          finalPathScale = pathScale;
           break;
         }
       }
@@ -1046,7 +1133,43 @@ int main(int argc, char** argv)
         freePaths2.header.frame_id = "vehicle";
         pubFreePaths->publish(freePaths2);
         #endif
+        selectedPathPointCount = path.poses.size();
       }
+
+      const int plannerLogStride = debugLogDecimation > 0 ? debugLogDecimation : 1;
+      if (enableDebugLog && plannerDebugFile.is_open() &&
+          (plannerGoalUpdated || plannerDebugLogCounter % plannerLogStride == 0)) {
+        plannerDebugFile << std::fixed << std::setprecision(3)
+                         << (plannerGoalUpdated ? "goal_update" : "planner_cycle") << ","
+                         << odomTime << ","
+                         << vehicleX << "," << vehicleY << "," << vehicleYaw << ","
+                         << goalX << "," << goalY << ","
+                         << relativeGoalX << "," << relativeGoalY << "," << relativeGoalDis << ","
+                         << joyDir << ","
+                         << plannerCloudCropSize << ","
+                         << (checkObstacle ? 1 : 0) << ","
+                         << freezeStatus << ","
+                         << preSelectedGroupID << ","
+                         << selectedGroupRaw << ","
+                         << selectedRotDeg << ","
+                         << selectedPathGroup << ","
+                         << (pathFound ? 1 : 0) << ","
+                         << selectedPathPointCount << ","
+                         << finalPathScale << ","
+                         << finalPathRange << ","
+                         << finalPenaltyScore << ","
+                         << static_cast<int>(slow.data) << "\n";
+        plannerDebugFile.flush();
+      }
+      plannerDebugLogCounter++;
+      plannerGoalUpdated = false;
+
+      RCLCPP_INFO_THROTTLE(
+          nh->get_logger(), *nh->get_clock(), 1000,
+          "planner goal_rel=(%.2f, %.2f) dis=%.2f joyDir=%.1f pathFound=%d selected=%d rot=%.1f path_pts=%d obs=%d slow=%d",
+          relativeGoalX, relativeGoalY, relativeGoalDis, joyDir, pathFound ? 1 : 0,
+          selectedGroupRaw, selectedRotDeg, selectedPathPointCount, plannerCloudCropSize,
+          static_cast<int>(slow.data));
 
       /*sensor_msgs::msg::PointCloud2 plannerCloud2;
       pcl::toROSMsg(*plannerCloudCrop, plannerCloud2);

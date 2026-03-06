@@ -83,7 +83,8 @@ void WaypointTool::onPoseSet(double x, double y, double theta)
   waypoint.header.stamp = joy.header.stamp;
   waypoint.point.x = x;
   waypoint.point.y = y;
-  waypoint.point.z = vehicle_z;
+  // Publish the goal on the ground plane so the RViz marker is easier to read.
+  waypoint.point.z = 0.0;
 
   pub_->publish(waypoint);
   usleep(10000);
