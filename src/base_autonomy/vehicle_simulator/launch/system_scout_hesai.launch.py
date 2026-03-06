@@ -34,10 +34,10 @@ Scout Mini + Hesai XT32 + RealSense D455 IMU 专用 launch 文件。
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
-from launch.launch_description_sources import FrontendLaunchDescriptionSource, PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node, SetParameter, SetRemap
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import FrontendLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node, SetParameter
 
 
 def generate_launch_description():
@@ -129,46 +129,29 @@ def generate_launch_description():
 
     # local_planner：局部规划 + pathFollower
     #   config=standard：差速/四轮驱动（Scout Mini 不是麦克纳姆）
-    #   realRobot=false：不走串口，/cmd_vel 以 TwistStamped 发布到话题
-    #
-    #   SetRemap 把 local_planner 组内所有 /cmd_vel 出口重定向到 /cmd_vel_stamped，
-    #   由 twist_stamped_to_twist 节点中继为 Twist 再发回 /cmd_vel，
-    #   供 Scout Mini ROS2 驱动消费。
+    #   realRobot=false：不走原仓库串口控制，直接发布 ROS /cmd_vel (Twist)
     #
     #  Scout Mini 尺寸（Trossen 规格：612 mm × 580 mm，向上取整留安全余量）：
     #    vehicleLength：0.70 m（前后方向，612 mm → 700 mm）
     #    vehicleWidth ：0.60 m（左右方向，580 mm → 600 mm）
-    start_local_planner = GroupAction([
-        SetRemap('/cmd_vel', '/cmd_vel_stamped'),
-        IncludeLaunchDescription(
-            FrontendLaunchDescriptionSource(os.path.join(
-                get_package_share_directory('local_planner'),
-                'launch', 'local_planner.launch')),
-            launch_arguments={
-                'config':        'standard',
-                'realRobot':     'false',
-                'sensorOffsetX': sensorOffsetX,
-                'sensorOffsetY': sensorOffsetY,
-                'cameraOffsetZ': cameraOffsetZ,
-                'goalX':         vehicleX,
-                'goalY':         vehicleY,
-                'maxSpeed':      maxSpeed,
-                'twoWayDrive':   'false',
-                'autonomyMode':  'false',
-                'vehicleLength': '0.70',
-                'vehicleWidth':  '0.60',
-            }.items(),
-        ),
-    ])
-
-    # TwistStamped → Twist 中继
-    #   pathFollower (realRobot=false) 发布 /cmd_vel_stamped (TwistStamped)
-    #   此节点剥掉 header，以 Twist 发布 /cmd_vel 供 Scout Mini 驱动订阅
-    start_cmd_vel_relay = Node(
-        package='vehicle_simulator',
-        executable='twist_stamped_to_twist.py',
-        name='twist_stamped_to_twist',
-        output='screen',
+    start_local_planner = IncludeLaunchDescription(
+        FrontendLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('local_planner'),
+            'launch', 'local_planner.launch')),
+        launch_arguments={
+            'config':        'standard',
+            'realRobot':     'false',
+            'sensorOffsetX': sensorOffsetX,
+            'sensorOffsetY': sensorOffsetY,
+            'cameraOffsetZ': cameraOffsetZ,
+            'goalX':         vehicleX,
+            'goalY':         vehicleY,
+            'maxSpeed':      maxSpeed,
+            'twoWayDrive':   'false',
+            'autonomyMode':  'false',
+            'vehicleLength': '0.70',
+            'vehicleWidth':  '0.60',
+        }.items(),
     )
 
     # visualization_tools：轨迹/指标记录节点
@@ -253,7 +236,6 @@ def generate_launch_description():
     ld.add_action(start_terrain_analysis)
     ld.add_action(start_terrain_analysis_ext)
     ld.add_action(start_local_planner)
-    ld.add_action(start_cmd_vel_relay)
     ld.add_action(start_visualization_tools)
     ld.add_action(start_rviz)
 

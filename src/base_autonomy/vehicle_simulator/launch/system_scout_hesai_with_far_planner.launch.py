@@ -12,9 +12,7 @@ Scout Mini + Hesai XT32 + RealSense D455 + far_planner 全局路径规划 launch
                                 ↓
                           /way_point
                                 ↓
-                     localPlanner → /path → pathFollower → /cmd_vel_stamped
-                                                               ↓
-                          twist_stamped_to_twist → /cmd_vel (Twist)
+                     localPlanner → /path → pathFollower → /cmd_vel (Twist)
 
 RViz 操作说明：
   - 使用 Goalpoint 工具（RViz 插件 goalpoint_rviz_plugin，快捷键 'w'）
@@ -44,7 +42,7 @@ RViz 操作说明：
 
   # 观察：
   ros2 topic echo /way_point    # far_planner 发出的局部目标点
-  ros2 topic echo /cmd_vel      # pathFollower → relay 的最终 Twist 控制命令
+  ros2 topic echo /cmd_vel      # pathFollower 直接发布的最终 Twist 控制命令
 
 far_planner config 选项：
   indoor.yaml：适合室内，范围较小
@@ -58,10 +56,10 @@ far_planner config 选项：
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import FrontendLaunchDescriptionSource, PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, SetParameter, SetRemap
+from launch_ros.actions import Node, SetParameter
 
 
 def generate_launch_description():
@@ -140,41 +138,29 @@ def generate_launch_description():
         launch_arguments={'checkTerrainConn': checkTerrainConn}.items(),
     )
 
-    # local_planner：GroupAction + SetRemap 把 pathFollower 的 /cmd_vel 出口
-    # 重定向到 /cmd_vel_stamped，由 twist_stamped_to_twist 中继为 Twist
+    # local_planner：直接由 pathFollower 发布 /cmd_vel (Twist) 给 Scout 驱动
     #
     # Scout Mini 尺寸（Trossen 规格：612 mm × 580 mm，向上取整留安全余量）：
     #   vehicleLength：0.70 m（前后方向，612 mm → 700 mm）
     #   vehicleWidth ：0.60 m（左右方向，580 mm → 600 mm）
-    start_local_planner = GroupAction([
-        SetRemap('/cmd_vel', '/cmd_vel_stamped'),
-        IncludeLaunchDescription(
-            FrontendLaunchDescriptionSource(os.path.join(
-                get_package_share_directory('local_planner'),
-                'launch', 'local_planner.launch')),
-            launch_arguments={
-                'config':        'standard',
-                'realRobot':     'false',
-                'sensorOffsetX': sensorOffsetX,
-                'sensorOffsetY': sensorOffsetY,
-                'cameraOffsetZ': cameraOffsetZ,
-                'goalX':         vehicleX,
-                'goalY':         vehicleY,
-                'maxSpeed':      maxSpeed,
-                'twoWayDrive':   'false',
-                'autonomyMode':  'false',
-                'vehicleLength': '0.70',
-                'vehicleWidth':  '0.60',
-            }.items(),
-        ),
-    ])
-
-    # TwistStamped → Twist 中继（供 Scout Mini 驱动消费）
-    start_cmd_vel_relay = Node(
-        package='vehicle_simulator',
-        executable='twist_stamped_to_twist.py',
-        name='twist_stamped_to_twist',
-        output='screen',
+    start_local_planner = IncludeLaunchDescription(
+        FrontendLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('local_planner'),
+            'launch', 'local_planner.launch')),
+        launch_arguments={
+            'config':        'standard',
+            'realRobot':     'false',
+            'sensorOffsetX': sensorOffsetX,
+            'sensorOffsetY': sensorOffsetY,
+            'cameraOffsetZ': cameraOffsetZ,
+            'goalX':         vehicleX,
+            'goalY':         vehicleY,
+            'maxSpeed':      maxSpeed,
+            'twoWayDrive':   'false',
+            'autonomyMode':  'false',
+            'vehicleLength': '0.70',
+            'vehicleWidth':  '0.60',
+        }.items(),
     )
 
     # ------------------------------------------------------------------ #
@@ -267,7 +253,6 @@ def generate_launch_description():
     ld.add_action(start_terrain_analysis)
     ld.add_action(start_terrain_analysis_ext)
     ld.add_action(start_local_planner)
-    ld.add_action(start_cmd_vel_relay)
     ld.add_action(start_far_planner)
     ld.add_action(start_visualization_tools)
     ld.add_action(start_rviz)

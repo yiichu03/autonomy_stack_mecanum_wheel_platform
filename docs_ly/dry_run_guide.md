@@ -111,7 +111,7 @@ ros2 launch vehicle_simulator system_scout_hesai_with_far_planner.launch.py
 
 ```bash
 source /opt/ros/humble/setup.bash
-ros2 topic echo /cmd_velniniss
+ros2 topic echo /cmd_vel
 ```
 
 没有 waypoint 时输出全为零，这是正常的。
@@ -202,13 +202,9 @@ RealSense D455  →  /camera/imu  ───────────────�
                                 │
               localPlanner  ←── /way_point（RViz 工具 或 far_planner）
                                 │
-                            /path
+                         /path
                                 │
                          pathFollower
-                                │
-                    /cmd_vel_stamped (TwistStamped)
-                                │
-               twist_stamped_to_twist（中继节点）
                                 │
                     /cmd_vel (Twist)  ← echo 观察此处
 ```
