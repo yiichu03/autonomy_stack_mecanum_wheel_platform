@@ -4,9 +4,9 @@ system_scout_hesai.launch.py
 Scout Mini + Hesai XT32 + RealSense D455 IMU 专用 launch 文件。
 
 架构：
-  FAST-LIO2 (fastlio_ws)  →  remap  →  odom_frame_relay  →  autonomy_stack
+  FAST-LIO2 (fastlio_ws)  →  remap  →  registered_scan_frame_relay / odom_frame_relay  →  autonomy_stack
     /Odometry               →  /state_estimation_raw
-    /cloud_registered       →  /registered_scan
+    /cloud_registered       →  /registered_scan_raw  →  /registered_scan
   odom_frame_relay：修正里程计方向（D455 body 帧 → ROS 标准帧）→ /state_estimation
 
 使用方式：
@@ -87,7 +87,7 @@ def generate_launch_description():
     #
     #  话题重映射：
     #    /Odometry         → /state_estimation_raw  (经 odom_frame_relay 修正后再发 /state_estimation)
-    #    /cloud_registered → /registered_scan        (sensor_msgs/PointCloud2)
+    #    /cloud_registered → /registered_scan_raw    (sensor_msgs/PointCloud2)
     # ------------------------------------------------------------------ #
     fastlio_config_path = os.path.join(
         get_package_share_directory('fast_lio'), 'config')
@@ -102,8 +102,15 @@ def generate_launch_description():
         ],
         remappings=[
             ('/Odometry',         '/state_estimation_raw'),
-            ('/cloud_registered', '/registered_scan'),
+            ('/cloud_registered', '/registered_scan_raw'),
         ],
+        output='screen',
+    )
+
+    start_registered_scan_relay = Node(
+        package='vehicle_simulator',
+        executable='registeredScanFrameRelay',
+        name='registered_scan_frame_relay',
         output='screen',
     )
 
@@ -255,6 +262,7 @@ def generate_launch_description():
     ld.add_action(tf_body_to_sensor)
     ld.add_action(tf_sensor_at_scan_to_vehicle)
     ld.add_action(start_fastlio)
+    ld.add_action(start_registered_scan_relay)
     ld.add_action(start_odom_relay)
     ld.add_action(start_sensor_scan_generation)
     ld.add_action(start_terrain_analysis)

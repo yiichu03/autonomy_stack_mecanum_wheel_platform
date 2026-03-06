@@ -120,8 +120,15 @@ def generate_launch_description():
         ],
         remappings=[
             ('/Odometry',         '/state_estimation_raw'),
-            ('/cloud_registered', '/registered_scan'),
+            ('/cloud_registered', '/registered_scan_raw'),
         ],
+        output='screen',
+    )
+
+    start_registered_scan_relay = Node(
+        package='vehicle_simulator',
+        executable='registeredScanFrameRelay',
+        name='registered_scan_frame_relay',
         output='screen',
     )
 
@@ -272,6 +279,7 @@ def generate_launch_description():
     ld.add_action(tf_body_to_sensor)
     ld.add_action(tf_sensor_at_scan_to_vehicle)
     ld.add_action(start_fastlio)
+    ld.add_action(start_registered_scan_relay)
     ld.add_action(start_odom_relay)
     ld.add_action(start_sensor_scan_generation)
     ld.add_action(start_terrain_analysis)

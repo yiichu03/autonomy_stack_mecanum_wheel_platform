@@ -194,7 +194,8 @@ bool initPlannerDebugFile()
     plannerDebugFile
         << "event,time,vehicle_x,vehicle_y,vehicle_yaw,"
         << "goal_x,goal_y,goal_rel_x,goal_rel_y,goal_rel_dis,joy_dir,"
-        << "planner_cloud_points,check_obstacle,freeze_status,preselected_group,"
+        << "planner_cloud_points,planner_left_points,planner_right_points,"
+        << "obstacle_left_points,obstacle_right_points,check_obstacle,freeze_status,preselected_group,"
         << "selected_group_raw,selected_rot_deg,selected_path_group,path_found,"
         << "path_points,path_scale,path_range,penalty_score,slow_level\n";
   }
@@ -769,10 +770,15 @@ int main(int argc, char** argv)
 
       float sinVehicleYaw = sin(vehicleYaw);
       float cosVehicleYaw = cos(vehicleYaw);
+      const float sideCountEpsilon = 0.05f;
 
       pcl::PointXYZI point;
       plannerCloudCrop->clear();
       int plannerCloudSize = plannerCloud->points.size();
+      int plannerLeftPointCount = 0;
+      int plannerRightPointCount = 0;
+      int obstacleLeftPointCount = 0;
+      int obstacleRightPointCount = 0;
       for (int i = 0; i < plannerCloudSize; i++) {
         float pointX1 = plannerCloud->points[i].x - vehicleX;
         float pointY1 = plannerCloud->points[i].y - vehicleY;
@@ -786,9 +792,15 @@ int main(int argc, char** argv)
         float dis = sqrt(point.x * point.x + point.y * point.y);
         if (dis < adjacentRange && ((point.z > minRelZ && point.z < maxRelZ) || useTerrainAnalysis)) {
           plannerCloudCrop->push_back(point);
+          if (point.y > sideCountEpsilon) plannerLeftPointCount++;
+          else if (point.y < -sideCountEpsilon) plannerRightPointCount++;
+
+          if (point.intensity > obstacleHeightThre || !useTerrainAnalysis) {
+            if (point.y > sideCountEpsilon) obstacleLeftPointCount++;
+            else if (point.y < -sideCountEpsilon) obstacleRightPointCount++;
+          }
         }
       }
-      int plannerCloudCropSize = plannerCloudCrop->points.size();
 
       int boundaryCloudSize = boundaryCloud->points.size();
       for (int i = 0; i < boundaryCloudSize; i++) {
@@ -802,6 +814,10 @@ int main(int argc, char** argv)
         float dis = sqrt(point.x * point.x + point.y * point.y);
         if (dis < adjacentRange) {
           plannerCloudCrop->push_back(point);
+          if (point.y > sideCountEpsilon) plannerLeftPointCount++;
+          else if (point.y < -sideCountEpsilon) plannerRightPointCount++;
+          if (point.y > sideCountEpsilon) obstacleLeftPointCount++;
+          else if (point.y < -sideCountEpsilon) obstacleRightPointCount++;
         }
       }
 
@@ -817,8 +833,13 @@ int main(int argc, char** argv)
         float dis = sqrt(point.x * point.x + point.y * point.y);
         if (dis < adjacentRange) {
           plannerCloudCrop->push_back(point);
+          if (point.y > sideCountEpsilon) plannerLeftPointCount++;
+          else if (point.y < -sideCountEpsilon) plannerRightPointCount++;
+          if (point.y > sideCountEpsilon) obstacleLeftPointCount++;
+          else if (point.y < -sideCountEpsilon) obstacleRightPointCount++;
         }
       }
+      int plannerCloudCropSize = plannerCloudCrop->points.size();
 
       slow.data = 0;
       float pathRange = adjacentRange;
@@ -1147,6 +1168,10 @@ int main(int argc, char** argv)
                          << relativeGoalX << "," << relativeGoalY << "," << relativeGoalDis << ","
                          << joyDir << ","
                          << plannerCloudCropSize << ","
+                         << plannerLeftPointCount << ","
+                         << plannerRightPointCount << ","
+                         << obstacleLeftPointCount << ","
+                         << obstacleRightPointCount << ","
                          << (checkObstacle ? 1 : 0) << ","
                          << freezeStatus << ","
                          << preSelectedGroupID << ","
