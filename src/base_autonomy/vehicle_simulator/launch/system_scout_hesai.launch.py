@@ -199,18 +199,18 @@ def generate_launch_description():
     #  FAST-LIO2 发布：camera_init → body
     #  local_planner 发布：sensor → vehicle, sensor → camera
     #  缺失的连接：
-    #    1. map ← camera_init：FAST-LIO2 用 camera_init 作为世界帧，
-    #       autonomy_stack 用 map，二者等价，发布 identity TF 桥接
+    #    1. map ← camera_init：将 FAST-LIO2 原始世界系
+    #       (X=右, Y=下, Z=前) 旋正到 ROS map (X=前, Y=左, Z=上)
     #    2. body → sensor：将 D455 body 帧（Z=前，X=右，Y=下）旋转到
     #       autonomy_stack 期望的 sensor 帧（X=前，Y=左，Z=上）
-    #       旋转四元数 (qx,qy,qz,qw) = (0.5, -0.5, 0.5, 0.5)
-    #       验证：body.Z(前)→sensor.X ✓  body.X(右)→sensor.(-Y) ✓  body.Y(下)→sensor.(-Z) ✓
+    #       map ← camera_init: (qx,qy,qz,qw)=(-0.5, 0.5, -0.5, 0.5)
+    #       body ← sensor:     (qx,qy,qz,qw)=( 0.5,-0.5,  0.5, 0.5)
     # ------------------------------------------------------------------ #
     tf_map_to_camera_init = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='tf_map_to_camera_init',
-        arguments=['0', '0', '0', '0', '0', '0', '1', 'map', 'camera_init'],
+        arguments=['0', '0', '0', '-0.5', '0.5', '-0.5', '0.5', 'map', 'camera_init'],
     )
 
     tf_body_to_sensor = Node(

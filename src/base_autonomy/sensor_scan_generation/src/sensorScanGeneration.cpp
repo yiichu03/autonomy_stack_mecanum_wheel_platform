@@ -9,7 +9,9 @@
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
 #include "tf2/transform_datatypes.h"
+#include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 #include <pcl_conversions/pcl_conversions.h>
@@ -42,6 +44,8 @@ tf2::Stamped<tf2::Transform> transformToMap;
 geometry_msgs::msg::TransformStamped transformTfGeom ; 
 
 unique_ptr<tf2_ros::TransformBroadcaster> tfBroadcasterPointer;
+shared_ptr<tf2_ros::Buffer> tfBufferPointer;
+shared_ptr<tf2_ros::TransformListener> tfListenerPointer;
 shared_ptr<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>> pubLaserCloud;
 
 void laserCloudAndOdometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr odometry,
@@ -53,11 +57,30 @@ void laserCloudAndOdometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr 
   pcl::fromROSMsg(*laserCloud2, *laserCloudIn);
 
   odometryIn = *odometry;
+  const string odomFrame = odometryIn.header.frame_id.empty() ? "map" : odometryIn.header.frame_id;
+  const string cloudFrame = laserCloud2->header.frame_id.empty() ? odomFrame : laserCloud2->header.frame_id;
 
   transformToMap.setOrigin(
       tf2::Vector3(odometryIn.pose.pose.position.x, odometryIn.pose.pose.position.y, odometryIn.pose.pose.position.z));
   transformToMap.setRotation(tf2::Quaternion(odometryIn.pose.pose.orientation.x, odometryIn.pose.pose.orientation.y,
                                             odometryIn.pose.pose.orientation.z, odometryIn.pose.pose.orientation.w));
+
+  tf2::Transform transformCloudToOdom;
+  bool needCloudTransform = false;
+  if (cloudFrame != odomFrame) {
+    try
+    {
+      auto cloudToOdomMsg = tfBufferPointer->lookupTransform(odomFrame, cloudFrame, tf2::TimePointZero);
+      tf2::fromMsg(cloudToOdomMsg.transform, transformCloudToOdom);
+      needCloudTransform = true;
+    }
+    catch (tf2::TransformException &ex)
+    {
+      RCLCPP_WARN(rclcpp::get_logger("sensor_scan"), "sensor_scan_generation: cannot transform %s -> %s: %s",
+                  cloudFrame.c_str(), odomFrame.c_str(), ex.what());
+      return;
+    }
+  }
 
   int laserCloudInNum = laserCloudIn->points.size();
 
@@ -71,6 +94,10 @@ void laserCloudAndOdometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr 
     vec.setY(p1.y);
     vec.setZ(p1.z);
 
+    if (needCloudTransform) {
+      vec = transformCloudToOdom * vec;
+    }
+
     vec = transformToMap.inverse() * vec;
 
     p1.x = vec.x();
@@ -81,11 +108,11 @@ void laserCloudAndOdometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr 
   }
 
   odometryIn.header.stamp = laserCloud2->header.stamp;
-  odometryIn.header.frame_id = "map";
+  odometryIn.header.frame_id = odomFrame;
   odometryIn.child_frame_id = "sensor_at_scan";
   pubOdometryPointer->publish(odometryIn);
 
-  transformToMap.frame_id_ = "map";
+  transformToMap.frame_id_ = odomFrame;
   transformTfGeom = tf2::toMsg(transformToMap);
   transformTfGeom.header.stamp = laserCloud2->header.stamp;
   transformTfGeom.child_frame_id = "sensor_at_scan";
@@ -132,6 +159,8 @@ int main(int argc, char** argv)
   pubOdometryPointer = nh->create_publisher<nav_msgs::msg::Odometry>("/state_estimation_at_scan", 5);
 
   tfBroadcasterPointer = std::make_unique<tf2_ros::TransformBroadcaster>(*nh);
+  tfBufferPointer = std::make_shared<tf2_ros::Buffer>(nh->get_clock());
+  tfListenerPointer = std::make_shared<tf2_ros::TransformListener>(*tfBufferPointer);
 
   pubLaserCloud = nh->create_publisher<sensor_msgs::msg::PointCloud2>("/sensor_scan", 2);
 

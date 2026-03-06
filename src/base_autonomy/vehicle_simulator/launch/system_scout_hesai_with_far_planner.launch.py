@@ -230,7 +230,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='tf_map_to_camera_init',
-        arguments=['0', '0', '0', '0', '0', '0', '1', 'map', 'camera_init'],
+        arguments=['0', '0', '0', '-0.5', '0.5', '-0.5', '0.5', 'map', 'camera_init'],
     )
 
     tf_body_to_sensor = Node(
