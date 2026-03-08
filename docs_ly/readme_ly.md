@@ -56,11 +56,11 @@ ros2 bag play /home/rho/Documents/data/run_20260228_194305/rosbag --clock
 
   1. vehicleLength/Width = 0.5m（local_planner.launch 硬编码），Scout Mini 实际 0.93×0.70m。
   离线测试影响不大（避障裕量偏窄），但上车前需要修正。
-  2. TwistStamped → Twist relay 缺失：pathFollower 发布 TwistStamped 到 /cmd_vel，Scout Mini ROS驱动接收 Twist。Phase D 上车时需要加一个 relay 节点。
+  2. 当前代码已改为 pathFollower 直接发布 /cmd_vel (Twist) 给 Scout 驱动；Phase D 的重点转为实车低速验证，而不是再补 relay。
 
   ---
-  如果 RViz 里 /terrain_map 有内容并且 /free_paths 出现了路径候选，说明 Phase C 通过。接下来的关键步骤是修正 vehicleLength/Width 并添加 TwistStamped→Twist
-  relay，然后进入 Phase D 实车测试。
+  如果 RViz 里 /terrain_map 有内容并且 /free_paths 出现了路径候选，说明 Phase C 通过。接下来的关键步骤是修正 vehicleLength/Width，并验证当前
+  /cmd_vel (Twist) 直连 Scout 底盘驱动的链路，然后进入 Phase D 实车测试。
 
 ## RViz 启动与显示项
 visualization_tools.launch 只启动了一个后台数据节点，并不会打开 RViz。RViz 需要单独启动。已经有一个现成的配置文件 vehicle_simulator.rviz，用第三个终端打开它：
@@ -191,9 +191,9 @@ ros2 run rviz2 rviz2 -d \
   local_planner.launch 里 vehicleLength/Width 硬编码为 0.5m，但 Scout Mini 是 0.93×0.70m，碰撞检测裕量会偏窄。需要把 localPlanner 和 pathFollower 从
   IncludeLaunchDescription 改成直接以 Node 方式启动，这样可以传入正确尺寸。
 
-  准备 2：TwistStamped → Twist relay
+  准备 2：底盘直连验证
 
-  pathFollower 发布的 /cmd_vel 是 TwistStamped，但 Scout Mini 的 ROS 驱动接收 Twist。需要写一个小的 relay 节点做类型转换。这是上车运动的最后一块拼图。
+  pathFollower 现在已经直接发布 /cmd_vel (Twist)，Scout Mini 的 ROS 驱动可以直接订阅。这里的重点变成验证 scout_base 实际收消息、底盘响应和限速是否符合预期。
 
   完成这两步后就可以进行 Phase D 实车低速验证。
 

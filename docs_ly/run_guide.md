@@ -215,6 +215,7 @@ RealSense D455  →  /camera/imu  ───────────────�
 ---
 
 ## 关键参数（当前配置）
+https://cdn.shopify.com/s/files/1/0551/0630/6141/files/SCOUT_MINI_USER_MANUAL2023.12_50914.pdf?v=1711434366
 
 | 参数 | 值 | 依据 |
 |------|----|------|
@@ -223,7 +224,7 @@ RealSense D455  →  /camera/imu  ───────────────�
 | sensorOffsetX | 0.0 m | `B_p_L=[0,0,0]`，雷达原点=车体坐标系原点 |
 | sensorOffsetY | 0.0 m | 同上 |
 | maxSpeed | 0.5 m/s | 保守初始值，Scout Mini 上限约 1.5 m/s |
-| vehicleHeight | 1.5 m | **待修正**，实测雷达离地高度后更新 |
+| vehicleHeight | 0.95 m | 雷达离地高度 |
 
 ---
 

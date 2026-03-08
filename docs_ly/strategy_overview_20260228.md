@@ -24,7 +24,7 @@
 | IMU | Livox Mid-360 内置 | RealSense D455（BMI055，/camera/imu） | ✅ 验证可用，~193Hz |
 | SLAM | arise_slam_mid360 | FAST-LIO2（独立 workspace） | ✅ 离线验证通过 |
 | 主算力 | Intel NUC i7（x86） | Jetson AGX Orin（aarch64） | ✅ 已处理架构差异 |
-| 电机接口 | 串口 /dev/ttyACM0（pathFollower 直写） | scout_base（订阅 geometry_msgs/Twist） | ❌ TwistStamped→Twist relay 未完成 |
+| 电机接口 | 串口 /dev/ttyACM0（pathFollower 直写） | scout_base（订阅 geometry_msgs/Twist） | ✅ 已改为直接发布 `/cmd_vel (Twist)` |
 | 坐标系约定 | Mid-360 body ≈ ROS 标准（X=前） | D455 body（Z=前，X=右，Y=下） | ✅ odom_frame_relay.py 已修正 |
 | 车体尺寸 | 0.5m × 0.5m（默认值） | 0.93m × 0.70m（Scout Mini 官方数据） | ❌ local_planner 未修正 |
 
@@ -55,10 +55,8 @@
          │ /free_paths（候选路径扇形，水平面）
          ▼
   pathFollower                     路径跟踪
-         │ /cmd_vel (TwistStamped)
-         ▼
-  [待做] TwistStamped→Twist relay  类型转换
-         │ /cmd_vel (Twist)
+         │ /cmd_vel          (Twist, 实车)
+         │ /cmd_vel_stamped  (TwistStamped, 仿真/调试)
          ▼
   scout_base                       底盘驱动
 ```
@@ -111,7 +109,7 @@ thermal_nav/
 | Phase C：全流水线离线贯通（terrain_map、free_paths 正常） | ✅ 完成 |
 | 坐标系修正（odom_frame_relay + body→sensor TF） | ✅ 完成 |
 | TF 树搭建（map↔camera_init↔body↔sensor↔vehicle） | ✅ 完成 |
-| **TwistStamped→Twist relay**（上车阻塞项） | ❌ 未做 |
+| **底盘控制接口改为 `/cmd_vel (Twist)`** | ✅ 已完成 |
 | **vehicleLength/Width 修正**（0.5m→0.93×0.70m） | ❌ 未做 |
 | Phase D：实车低速验证 | ❌ 未做 |
 | FAR 全局规划接入 | ❌ 未做 |
@@ -119,14 +117,13 @@ thermal_nav/
 
 ---
 
-## 六、距离上车（Phase D）还差两件事
+## 六、距离上车（Phase D）还差一件主要事情
 
-### 缺口 1：TwistStamped → Twist relay（阻塞项）
+### 缺口 1：底盘直连实车验证
 
-- **原因**：pathFollower（`realRobot=false`）发布 `geometry_msgs/TwistStamped`，
-  而 scout_base 订阅 `geometry_msgs/Twist`。类型不匹配，机器人不会动。
-- **方案**：写一个 ~15 行的 Python relay 节点，提取 TwistStamped.twist 字段重新发布为 Twist。
-- **放置位置**：vehicle_simulator/scripts/，加入 system_scout_hesai.launch.py。
+- **现状**：pathFollower 已直接发布 `geometry_msgs/Twist` 到 `/cmd_vel`，
+  scout_base 可以直接订阅；`/cmd_vel_stamped` 仅保留给仿真和调试链路。
+- **剩余工作**：在实车上验证驱动链路、速度方向、限速与急停逻辑是否正常。
 
 ### 缺口 2：vehicleLength/Width 修正（安全项）
 
@@ -143,7 +140,7 @@ thermal_nav/
 
 ```
 步骤 1：manual 模式（纯遥控，不开避障）
-  目的：验证"底盘通信链路"——relay 节点工作正常，scout_base 能收到指令，机器人能动
+  目的：验证"底盘通信链路"——scout_base 能收到 `/cmd_vel (Twist)`，机器人能动
   方法：用手柄操控，观察 /cmd_vel (Twist) 话题有数据，机器人响应
 
 步骤 2：smart joystick 模式（手柄控制 + 避障）
@@ -181,8 +178,7 @@ README 原文（2025 年后更新）写道：
     │
     ▼
 【立即】Phase D 准备
-    ├─ 写 TwistStamped→Twist relay 节点
-    └─ 修正 vehicleLength/Width 到 0.93×0.70m
+    └─ 修正 vehicleLength/Width 到 0.93×0.70m，并完成底盘低速验证
     │
     ▼
 【Phase D】实车验证（步骤 1→2→3，见第七节）

@@ -39,7 +39,7 @@
 
 ### 2.3 仓库架构约束
 
-1. `pathFollower` 发布 `TwistStamped` 到 `/cmd_vel`
+1. `pathFollower` 直接发布 `Twist` 到 `/cmd_vel`，并额外发布 `TwistStamped` 到 `/cmd_vel_stamped`
 2. `realRobot=true` 时会走串口写入（原平台电机协议）
 3. 实车 launch 默认启动 `livox_ros_driver2 + arise_slam_mid360`
 4. `arise_slam_mid360` 编译期强依赖 `livox_ros_driver2`
@@ -72,7 +72,7 @@
 6. **[前置] TF 树搭建**：写静态 TF launch，发布 `base_link → lidar_link → camera_link`；用 `view_frames` 确认完整
 7. FAST-LIO2 话题 remap 到本栈接口（`/Odometry` → `/state_estimation`，`/cloud_registered` → `/registered_scan`）
 8. base_autonomy 模块集成验证（不接底盘）
-9. TwistStamped → Twist relay + 底盘接入
+9. 底盘接入与低速验证
 10. 上车联调与参数收敛
 
 ## 4. 当前处境（客观判断）
@@ -81,7 +81,7 @@
 当前不适合直接上车跑全链路，原因：
 
 1. SLAM 数据链路尚未闭环验证（新 bag 还没录完并离线跑通）
-2. 控制链路类型不匹配（`TwistStamped` vs `Twist`）尚未桥接
+2. 控制链路虽已改为直接输出 `/cmd_vel (Twist)`，但尚未完成实车低速闭环验证
 3. 探索规划在 ARM 上有依赖阻塞（OR-Tools 架构不匹配）
 
 ## 5. 技术分析（核心决策）
@@ -93,8 +93,9 @@
 
 ### 5.2 控制路线
 
-本栈输出 `TwistStamped`，Scout 接收 `Twist`。  
-建议先加轻量 relay（`TwistStamped -> Twist`），尽量不动原算法核心。
+当前 `pathFollower` 已直接发布 `geometry_msgs/Twist` 到 `/cmd_vel`，同时保留
+`/cmd_vel_stamped` 供仿真链路使用。  
+当前阶段更需要验证的是 Scout 驱动是否稳定接收 `/cmd_vel (Twist)`，而不是再加额外 relay。
 
 ### 5.3 FAST-LIO2 接入的四个前置条件
 
@@ -148,7 +149,7 @@
 
 ### 阶段 D：接入底盘（低速安全）
 
-1. 新增 `TwistStamped -> Twist` relay
+1. 验证 Scout 驱动直接接收 `/cmd_vel (Twist)`
 2. 低速参数下进行实车闭环验证
 3. 分模式验证（手动/半自动/waypoint）
 
@@ -174,7 +175,7 @@
 
 ### 第 3 步（之后 2-4 天）：底盘接入
 
-1. 写 TwistStamped → Twist relay 节点（5 行代码）
+1. 确认 `/cmd_vel (Twist)` 直连底盘驱动正常
 2. 低速实车闭环验证（先走直线，再走圆弧）
 3. 第一次 waypoint 导航验证
 
@@ -183,7 +184,7 @@
 1. D455 IMU 作为主 IMU 的长期可行性与风险
 2. LiDAR 与 RealSense IMU 的时间同步方案是否足够稳健
 3. 当前外参和噪声参数是否合理，优先改哪些参数
-4. `TwistStamped -> Twist` 桥接是否足够，还是建议直接改 `pathFollower`
+4. 当前 `/cmd_vel (Twist)` + `/cmd_vel_stamped` 双通道设计是否合理
 5. FAR 接入时最容易踩的坐标系和话题 remap 错误点
 
 ## 9. 附：当前关键文件
@@ -274,11 +275,11 @@ source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platf
 
 ### D. 阶段 D：底盘接入
 
-**TwistStamped → Twist relay（临时方案）：**
+**底盘控制接口（当前方案）：**
 ```bash
-# pathFollower 发布 /cmd_vel (TwistStamped)，scout_base 需要 Twist
-# 用 topic_tools 做类型转换（需要自定义节点，topic_tools relay 无法做类型转换）
-# TODO: 写 5 行 Python relay 节点
+# pathFollower 直接发布 /cmd_vel (Twist)
+# scout_base 直接订阅 /cmd_vel (Twist)
+# /cmd_vel_stamped 仅保留给 vehicleSimulator / 调试链路使用
 ```
 
 **IMU 噪声标定（待做，改善 SLAM 质量）：**
@@ -494,9 +495,8 @@ git checkout src/preprocess.h src/preprocess.cpp  # 回滚
          │ 发布 /free_paths        (候选路径扇形，水平面)
          ▼
   pathFollower                  ← 路径跟踪
-         │ 发布 /cmd_vel           (TwistStamped)
-         ▼
-  [待做] TwistStamped→Twist relay
+         │ 发布 /cmd_vel           (Twist)
+         │ 发布 /cmd_vel_stamped   (TwistStamped, 仿真/调试)
          ▼
   scout_base                    ← 底盘驱动（接收 Twist）
 ```
@@ -574,8 +574,6 @@ source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platf
 ```
 
 > 顺序很重要：先 ROS2，再 fastlio_ws（提供 fast_lio 包），再 autonomy_stack（提供导航模块）。
-
-
 
 
 

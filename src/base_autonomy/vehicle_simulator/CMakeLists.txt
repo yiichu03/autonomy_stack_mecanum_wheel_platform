@@ -59,7 +59,6 @@ install(TARGETS
 
 install(PROGRAMS
   scripts/odom_frame_relay.py
-  scripts/twist_stamped_to_twist.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
