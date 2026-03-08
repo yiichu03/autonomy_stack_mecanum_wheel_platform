@@ -40,9 +40,8 @@
 
 1. `odom_frame_relay.py` 和相关 TF 旋转
 2. `registeredScanFrameRelay.cpp` 与 `sensorScanGeneration.cpp` 的 frame 处理
-3. `pathFollower.cpp` 的路径更新保留/抑制逻辑
-4. `standard.yaml` 中 yaw gain / maxYawRate / dirDiffThre 的改动
-5. `system_scout_hesai*.launch.py` 中对 `twoWayDrive`、车体尺寸、TF、话题 remap 的新设定
+3. `standard.yaml` 中 yaw gain / maxYawRate / dirDiffThre 的改动
+4. `system_scout_hesai*.launch.py` 中对 `twoWayDrive`、车体尺寸、TF、话题 remap 的新设定
 
 ## 4. 模块级差异
 
@@ -329,46 +328,17 @@
 - 跟踪滞后
 - 到目标附近调整过慢
 
-#### D. 新增“路径更新保留/抑制”代码逻辑，并配套新增参数
+#### D. 历史上曾新增“路径更新保留/抑制”逻辑，但当前工作树已回退
 
-这不是“只多了几个参数”，而是 `pathFollower.cpp` 里真的新增了一段处理新 path 的代码逻辑；这些参数只是用来控制这段新逻辑的行为。
+这里需要特别说明一下：`03bb5e0 (less update path, change dirdiffthre)` 这个提交里，曾经给 `pathFollower.cpp` 加过一段“保留旧路径进度 / 抑制短路径更新”的逻辑，并新增了一组配套参数。
 
-原始基线里的行为更简单：收到新 path 后，基本就是直接覆盖旧 path，并把 `pathPointID` 重置为 `0`。
+但当前工作树已经把这段逻辑手工回退到更接近 `2fb4167e79f642c32229b4cf0fcbae0509cc0220` 的行为：
 
-当前代码则多了两类新行为：
+- 收到新 path 后，重新覆盖旧 path
+- `pathPointID` 直接回到 `0`
+- 不再根据“短路径”“匹配阈值”决定是否 suppress 这次更新
 
-1. 尝试把旧路径上已经跟踪到的位置映射到新路径上，尽量续着走
-2. 在某些条件下直接忽略一条“太短、看起来不稳定”的新路径更新
-
-新增参数：
-
-- `preservePathProgressOnUpdate`
-  直观理解：新路径来了以后，尽量沿用当前已经走到的进度，而不是每次都从新路径开头重新追。
-- `pathProgressMatchThre`
-  直观理解：判断“新旧路径是不是基本同一条路”的距离阈值。值越大，越容易认为可以无缝续上。
-- `suppressShortPathUpdates`
-  直观理解：如果新路径太短，就先不接管，避免控制器因为路径频繁抖动而来回改主意。
-- `pathUpdateMinStableSize`
-  直观理解：多短才算“短路径”。点数低于这个值，就会更容易被视为不稳定更新。
-- `pathUpdateHoldEndDisThre`
-  直观理解：只有在旧路径终点还离得比较远时，才值得“压住”那些短的新路径；如果已经快到终点，就没必要这么保守。
-
-新增行为：
-
-1. 当收到新 path 时，不再简单把 `pathPointID` 重置到 0
-2. 会尝试把旧 path 的目标点映射到新 path 上，保留跟踪进度
-3. 如果新 path 太短、旧 path 末端还比较远，则可能直接 suppress 这次 path update
-
-这类逻辑的设计目标是：
-
-- 避免 FAR 或 local planner 高频刷新路径时，控制器来回“抽动”
-
-但它也确实可能引入你描述的第二类问题：
-
-- “明明新的 Goalpoint 可达，但小车没有正确接管新的路径”
-- “运行一段时间后，点击新 goal 反应异常”
-
-如果重点怀疑“是不是你新加的逻辑引入错误”，这一段应当优先检查。
+所以这部分可以作为“你调试过程中曾经引入过的中间版本历史”保留在讨论里，但它已经不再是当前代码相对基线的有效差异点。
 
 #### E. 新增 path follower CSV 和 throttle 日志
 
@@ -385,7 +355,6 @@
 - `vehicleSpeed`
 - `vehicleYawRate`
 - 实际发出的 `cmd_vel`
-- path update mode
 
 这部分不一定引入 bug，但大大提高了 debug 能力。
 
@@ -515,18 +484,13 @@
 - 规划器看到的障碍侧别颠倒
 - FAR / local planner 偶发性“认为前方不通”
 
-### 5.3 `pathFollower.cpp` 的新 path update 逻辑
+### 5.3 `pathFollower.cpp` 中这段 path update 逻辑的历史背景
 
-风险点：
+补充说明：
 
-- short path suppress 过于激进
-- path progress preserve 匹配错误
-- 新目标产生的新 path 被旧 path 状态“绑住”
-
-可能表现：
-
-- 运行一段时间后切换 Goalpoint 反应异常
-- 明明新 goal 可达，但控制器不愿意接管
+- 这段逻辑曾在 `03bb5e0` 引入
+- 当前工作树已经手工回退，不再保留相关参数和分支
+- 如果你和老师要复盘“是不是我某次改动引入过问题”，这仍然是一个值得讨论的历史点
 
 ### 5.4 `standard.yaml` 的控制增益改动
 
@@ -585,10 +549,10 @@
 | 状态 | 文件 | 说明 |
 |---|---|---|
 | M | `.gitignore` | 忽略 navigation debug 运行日志 |
-| M | `src/base_autonomy/local_planner/config/standard.yaml` | 控制器增益和 path update 参数调整 |
+| M | `src/base_autonomy/local_planner/config/standard.yaml` | 控制器增益调整 |
 | M | `src/base_autonomy/local_planner/launch/local_planner.launch` | 车体尺寸、两驱模式、日志参数、控制参数改造 |
 | M | `src/base_autonomy/local_planner/src/localPlanner.cpp` | planner 调试日志、goal 日志、选路观测变量 |
-| M | `src/base_autonomy/local_planner/src/pathFollower.cpp` | `/cmd_vel` 类型、path update 逻辑、控制器日志 |
+| M | `src/base_autonomy/local_planner/src/pathFollower.cpp` | `/cmd_vel` 类型、控制器日志 |
 | M | `src/base_autonomy/sensor_scan_generation/src/sensorScanGeneration.cpp` | 引入 TF 查询，增强 frame 兼容性 |
 | M | `src/base_autonomy/terrain_analysis/launch/terrain_analysis.launch` | `vehicleHeight` 标定调整 |
 | M | `src/base_autonomy/terrain_analysis_ext/launch/terrain_analysis_ext.launch` | `vehicleHeight` 标定调整 |
@@ -607,7 +571,7 @@
 3. 然后重点过 3 个行为热点：
    - `odom_frame_relay.py`
    - `registeredScanFrameRelay.cpp` / `sensorScanGeneration.cpp`
-   - `pathFollower.cpp` 的 path update 逻辑
+   - `pathFollower.cpp` 的控制参数与 `/cmd_vel` 行为
 4. 最后再看参数层：
    - `standard.yaml`
    - `vehicleLength/vehicleWidth`

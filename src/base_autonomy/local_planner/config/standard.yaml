@@ -10,8 +10,3 @@ pathFollower:
     maxYawRate: 60.0
     dirDiffThre: 0.30
     stopDisThre: 0.15
-    preservePathProgressOnUpdate: true
-    pathProgressMatchThre: 0.35
-    suppressShortPathUpdates: true
-    pathUpdateMinStableSize: 30
-    pathUpdateHoldEndDisThre: 0.60
