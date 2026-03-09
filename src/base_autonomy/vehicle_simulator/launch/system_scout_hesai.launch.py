@@ -40,7 +40,7 @@ from launch.launch_description_sources import FrontendLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter
 
-
+# generate_launch_description() 是 ROS 2 launch 文件的入口函数。ros2 launch 最终就是调用它，拿到一个 LaunchDescription。
 def generate_launch_description():
 
     # ------------------------------------------------------------------ #
@@ -52,22 +52,23 @@ def generate_launch_description():
     cameraOffsetZ   = LaunchConfiguration('cameraOffsetZ')
     vehicleX        = LaunchConfiguration('vehicleX')
     vehicleY        = LaunchConfiguration('vehicleY')
-    maxSpeed        = LaunchConfiguration('maxSpeed')
+    maxSpeed        = LaunchConfiguration('maxSpeed') # “后面谁需要 maxSpeed，就引用这个启动参数”。
     checkTerrainConn = LaunchConfiguration('checkTerrainConn')
     enableDebugLog  = LaunchConfiguration('enableDebugLog')
     debugLogDir     = LaunchConfiguration('debugLogDir')
     debugLogDecimation = LaunchConfiguration('debugLogDecimation')
 
-    workspace_root = os.path.dirname(
+    workspace_root = os.path.dirname( # 连续四次 dirname() 回到工作区根目录
         os.path.dirname(
             os.path.dirname(
                 os.path.dirname(get_package_share_directory('vehicle_simulator')))))
-    default_debug_log_dir = os.path.join(
+    default_debug_log_dir = os.path.join( # 拼出 runtime_logs/navigation_debug/<时间戳>。
         workspace_root,
         'runtime_logs',
         'navigation_debug',
         datetime.now().strftime('%Y%m%d_%H%M%S'))
 
+    # 真正声明了启动参数。
     declare_use_sim_time      = DeclareLaunchArgument('use_sim_time',      default_value='false',  description='true=bag 回放，false=实车实时')
     declare_sensorOffsetX     = DeclareLaunchArgument('sensorOffsetX',     default_value='0.0',    description='LiDAR 原点 = Body frame 原点（B_p_L=[0,0,0]），前向偏移为 0')
     declare_sensorOffsetY     = DeclareLaunchArgument('sensorOffsetY',     default_value='0.0',    description='LiDAR 相对车体中心的侧向偏移 (m)')
@@ -89,24 +90,25 @@ def generate_launch_description():
     #    /Odometry         → /state_estimation_raw  (经 odom_frame_relay 修正后再发 /state_estimation)
     #    /cloud_registered → /registered_scan_raw    (sensor_msgs/PointCloud2)
     # ------------------------------------------------------------------ #
-    fastlio_config_path = os.path.join(
+    fastlio_config_path = os.path.join( # 先拿到 fast_lio 包的 config 目录。
         get_package_share_directory('fast_lio'), 'config')
-
+    #  这里定义 fastlio_mapping 节点，但此时还没启动，只是先构造一个 Node action。
     start_fastlio = Node(
         package='fast_lio',
         executable='fastlio_mapping',
         name='fastlio_mapping',
         parameters=[
-            os.path.join(fastlio_config_path, 'hesai_xt32.yaml'),
-            {'use_sim_time': use_sim_time},
+            os.path.join(fastlio_config_path, 'hesai_xt32.yaml'),   # hesai_xt32.yaml 参数文件。
+            {'use_sim_time': use_sim_time},     # 用于覆盖或补充 YAML 里的参数。
         ],
-        remappings=[
+        remappings=[ # 把 FAST-LIO 原始输出改名 /Odometry -> /state_estimation_raw   ；  /cloud_registered -> /registered_scan_raw
             ('/Odometry',         '/state_estimation_raw'),
             ('/cloud_registered', '/registered_scan_raw'),
         ],
         output='screen',
     )
 
+    # 启动 registeredScanFrameRelay，它负责把 FAST-LIO 点云世界系转成导航栈需要的 map 系
     start_registered_scan_relay = Node(
         package='vehicle_simulator',
         executable='registeredScanFrameRelay',
@@ -114,7 +116,7 @@ def generate_launch_description():
         output='screen',
     )
 
-    # odom_frame_relay：修正里程计坐标系方向
+    # 启动 odom_frame_relay.py，它负责修正 FAST-LIO 里程计轴向，让下游看到标准 ROS 车体方向。
     #   D455 body 帧（Z=前，X=右，Y=下）→ ROS 标准帧（X=前，Y=左，Z=上）
     #   q_corrected = q_fastlio ⊗ (0.5, -0.5, 0.5, 0.5)
     start_odom_relay = Node(
@@ -128,7 +130,7 @@ def generate_launch_description():
     #  autonomy_stack 导航模块
     # ------------------------------------------------------------------ #
 
-    # sensor_scan_generation：将 /state_estimation + /registered_scan
+    #  include sensor_scan_generation.launch：将 /state_estimation + /registered_scan
     # 时间同步后输出 /state_estimation_at_scan + /sensor_scan
     start_sensor_scan_generation = IncludeLaunchDescription(
         FrontendLaunchDescriptionSource(os.path.join(
@@ -136,14 +138,14 @@ def generate_launch_description():
             'launch', 'sensor_scan_generation.launch')),
     )
 
-    # terrain_analysis：分析地形，输出可通行性地图
+    #  include terrain_analysis.launch：分析地形，输出局部可通行性地图/terrain_map
     start_terrain_analysis = IncludeLaunchDescription(
         FrontendLaunchDescriptionSource(os.path.join(
             get_package_share_directory('terrain_analysis'),
             'launch', 'terrain_analysis.launch')),
     )
 
-    # terrain_analysis_ext：扩展地形分析（障碍物连通性检查）
+    # include terrain_analysis_ext.launch：扩展地形分析（障碍物连通性检查）. 把 checkTerrainConn 传进去，输出扩展地形或连通性相关结果。
     start_terrain_analysis_ext = IncludeLaunchDescription(
         FrontendLaunchDescriptionSource(os.path.join(
             get_package_share_directory('terrain_analysis_ext'),
@@ -155,7 +157,7 @@ def generate_launch_description():
     #   config=standard：差速/四轮驱动（Scout Mini 不是麦克纳姆）
     #   realRobot=false：不走原仓库串口控制，直接发布 ROS /cmd_vel (Twist)
     #
-    #  Scout Mini 尺寸（Trossen 规格：612 mm × 580 mm，向上取整留安全余量）：
+    #  Scout Mini 尺寸（规格：612 mm × 580 mm，向上取整留安全余量）：
     #    vehicleLength：0.70 m（前后方向，612 mm → 700 mm）
     #    vehicleWidth ：0.60 m（左右方向，580 mm → 600 mm）
     start_local_planner = IncludeLaunchDescription(
@@ -163,15 +165,15 @@ def generate_launch_description():
             get_package_share_directory('local_planner'),
             'launch', 'local_planner.launch')),
         launch_arguments={
-            'config':        'standard',
-            'realRobot':     'false',
+            'config':        'standard', # 用标准轮式配置，不用全向轮配置。
+            'realRobot':     'false',  # 不用原仓库那条串口直控链，而是直接发 ROS Twist。
             'sensorOffsetX': sensorOffsetX,
             'sensorOffsetY': sensorOffsetY,
             'cameraOffsetZ': cameraOffsetZ,
             'goalX':         vehicleX,
             'goalY':         vehicleY,
             'maxSpeed':      maxSpeed,
-            'twoWayDrive':   'false',
+            'twoWayDrive':   'false',    # 表示规划器/控制器按“不允许倒车优先”的思路工作。 #####################
             'autonomyMode':  'false',
             'vehicleLength': '0.70',
             'vehicleWidth':  '0.60',
@@ -181,7 +183,7 @@ def generate_launch_description():
         }.items(),
     )
 
-    # visualization_tools：轨迹/指标记录节点
+    # visualization_tools：轨迹/指标记录节点   辅助可视化和指标记录。
     start_visualization_tools = IncludeLaunchDescription(
         FrontendLaunchDescriptionSource(os.path.join(
             get_package_share_directory('visualization_tools'),
@@ -189,7 +191,7 @@ def generate_launch_description():
         launch_arguments={'world_name': 'real_world'}.items(),
     )
 
-    # RViz：加载导航栈专用配置（含 Waypoint/Goalpoint 插件）
+    # RViz：加载导航栈专用配置（直接加载 vehicle_simulator.rviz）（含 Waypoint/Goalpoint 插件）
     start_rviz = Node(
         package='rviz2',
         executable='rviz2',
@@ -206,10 +208,8 @@ def generate_launch_description():
     #  FAST-LIO2 发布：camera_init → body
     #  local_planner 发布：sensor → vehicle, sensor → camera
     #  缺失的连接：
-    #    1. map ← camera_init：将 FAST-LIO2 原始世界系
-    #       (X=右, Y=下, Z=前) 旋正到 ROS map (X=前, Y=左, Z=上)
-    #    2. body → sensor：将 D455 body 帧（Z=前，X=右，Y=下）旋转到
-    #       autonomy_stack 期望的 sensor 帧（X=前，Y=左，Z=上）
+    #    1. map ← camera_init：将 FAST-LIO2 原始世界系(X=右, Y=下, Z=前) 旋正到 ROS map (X=前, Y=左, Z=上)
+    #    2. body → sensor：将 D455 body 帧（Z=前，X=右，Y=下）旋转到autonomy_stack 期望的 sensor 帧（X=前，Y=左，Z=上）
     #       map ← camera_init: (qx,qy,qz,qw)=(-0.5, 0.5, -0.5, 0.5)
     #       body ← sensor:     (qx,qy,qz,qw)=( 0.5,-0.5,  0.5, 0.5)
     # ------------------------------------------------------------------ #
@@ -240,7 +240,7 @@ def generate_launch_description():
     # ------------------------------------------------------------------ #
     #  组装 LaunchDescription
     # ------------------------------------------------------------------ #
-    ld = LaunchDescription()
+    ld = LaunchDescription() # 创建一个空的 LaunchDescription 容器。
 
     ld.add_action(declare_use_sim_time)
     ld.add_action(declare_sensorOffsetX)
