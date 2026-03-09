@@ -1,4 +1,11 @@
 # readme_ly（排版整理）
+
+> 这份文档主要是早期资料的排版整理和归档，不是当前主运行指南。  
+> 当前请优先看：
+> 1. `docs_ly/run_guide.md`
+> 2. `docs_ly/current_status_20260309.md`
+> 3. `docs_ly/navigation_debug_spin_issue_20260309.md`
+
 说明：保留原始内容，仅做格式整理（空白、分段、代码块）。
 
 ## FAST-LIO2 离线回放（两终端）
