@@ -112,6 +112,7 @@ def generate_launch_description():
         remappings=[ # 把 FAST-LIO 原始输出改名 /Odometry -> /state_estimation_raw   ；  /cloud_registered -> /registered_scan_raw
             ('/Odometry',         '/state_estimation_raw'),
             ('/cloud_registered', '/registered_scan_raw'),
+            ('/path',             '/fastlio_path'),  # FAST-LIO2 历史轨迹，避免 pathFollower 误当导航路径接收
         ],
         output='screen',
     )
