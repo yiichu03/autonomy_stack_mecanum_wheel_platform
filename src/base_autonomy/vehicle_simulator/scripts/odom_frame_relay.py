@@ -24,6 +24,14 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry
 
 
+def normalize_quat(q):
+    x, y, z, w = q
+    norm = (x * x + y * y + z * z + w * w) ** 0.5
+    if norm < 1e-12:
+        return (0.0, 0.0, 0.0, 1.0)
+    return (x / norm, y / norm, z / norm, w / norm)
+
+
 def quat_multiply(q1, q2):
     """Hamilton product q1 ⊗ q2，输入输出均为 (x, y, z, w)。"""
     x1, y1, z1, w1 = q1
@@ -44,12 +52,27 @@ class OdomFrameRelay(Node):
 
     def __init__(self):
         super().__init__('odom_frame_relay')
+        self.declare_parameter('gravity_level_qx', 0.0)
+        self.declare_parameter('gravity_level_qy', 0.0)
+        self.declare_parameter('gravity_level_qz', 0.0)
+        self.declare_parameter('gravity_level_qw', 1.0)
+
+        self.q_level = normalize_quat((
+            float(self.get_parameter('gravity_level_qx').value),
+            float(self.get_parameter('gravity_level_qy').value),
+            float(self.get_parameter('gravity_level_qz').value),
+            float(self.get_parameter('gravity_level_qw').value),
+        ))
+        self.q_map_camera_init = normalize_quat(
+            quat_multiply(self.q_level, self.Q_MAP_CAMERA_INIT))
         self.pub = self.create_publisher(Odometry, '/state_estimation', 5)
         self.sub = self.create_subscription(
             Odometry, '/state_estimation_raw', self.callback, 5)
         self.get_logger().info(
             'odom_frame_relay: /state_estimation_raw → /state_estimation '
-            '(D455 body frame → ROS standard frame)')
+            '(D455 body frame → ROS standard frame), '
+            f'gravity leveling q=({self.q_level[0]:.6f}, {self.q_level[1]:.6f}, '
+            f'{self.q_level[2]:.6f}, {self.q_level[3]:.6f})')
 
     def callback(self, msg: Odometry):
         q_in = (
@@ -58,11 +81,12 @@ class OdomFrameRelay(Node):
             msg.pose.pose.orientation.z,
             msg.pose.pose.orientation.w,
         )
-        q_map_body = quat_multiply(self.Q_MAP_CAMERA_INIT, q_in)
-        qx, qy, qz, qw = quat_multiply(q_map_body, self.Q_BODY_SENSOR)
+        q_map_body = quat_multiply(self.q_map_camera_init, q_in)
+        qx, qy, qz, qw = normalize_quat(
+            quat_multiply(q_map_body, self.Q_BODY_SENSOR))
 
         px, py, pz = rotate_vector(
-            self.Q_MAP_CAMERA_INIT,
+            self.q_map_camera_init,
             (
                 msg.pose.pose.position.x,
                 msg.pose.pose.position.y,
@@ -70,7 +94,7 @@ class OdomFrameRelay(Node):
             ),
         )
         lvx, lvy, lvz = rotate_vector(
-            self.Q_MAP_CAMERA_INIT,
+            self.q_map_camera_init,
             (
                 msg.twist.twist.linear.x,
                 msg.twist.twist.linear.y,
@@ -78,7 +102,7 @@ class OdomFrameRelay(Node):
             ),
         )
         avx, avy, avz = rotate_vector(
-            self.Q_MAP_CAMERA_INIT,
+            self.q_map_camera_init,
             (
                 msg.twist.twist.angular.x,
                 msg.twist.twist.angular.y,

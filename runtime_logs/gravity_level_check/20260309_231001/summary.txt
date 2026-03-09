@@ -1,0 +1,9 @@
+input=/home/rho/Documents/liuyi/projects/thermal_nav/fastlio_ws/src/FAST_LIO/Log/pos_log.txt
+rows=103
+q_level=[-0.004276, 0.043092, 0.000000, 0.999062]
+q_total=[-0.523215, 0.518939, -0.480123, 0.475847]
+grav_fastlio_mean=[-0.084479, 9.772377, 0.842610]
+grav_leveled_mean=[-0.001983, 0.000670, -9.809000]
+grav_leveled_norm=9.809000
+grav_leveled_horiz=0.002093
+grav_leveled_tilt_deg=0.012226

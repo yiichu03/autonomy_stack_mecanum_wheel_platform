@@ -59,6 +59,7 @@ install(TARGETS
 
 install(PROGRAMS
   scripts/odom_frame_relay.py
+  scripts/export_leveled_gravity_log.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

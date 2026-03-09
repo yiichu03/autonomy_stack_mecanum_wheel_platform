@@ -26,8 +26,8 @@ pathFollower:
     # 一般来说，只有 abs(dirDiff) 小于这个值时，车才会更愿意起速前进。
     # 调大：车在还没完全对正时就会更早开始往前走。
     # 调小：更偏向“先转正，再前进”。
-    dirDiffThre: 0.50   # 0.30
+    dirDiffThre: 0.40   # 0.5 big, no;   0.30
     # 到目标点的停止阈值，单位是米。
     # 当跟踪点距离小于这个值，且 noRotAtGoal=true 时，
     # 控制器会在接近目标时抑制转向命令。
-    stopDisThre: 0.30 # 0.15
+    stopDisThre: 0.20 # 0.3 big, no; 0.15

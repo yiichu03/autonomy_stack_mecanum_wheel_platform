@@ -57,6 +57,10 @@ def generate_launch_description():
     enableDebugLog  = LaunchConfiguration('enableDebugLog')
     debugLogDir     = LaunchConfiguration('debugLogDir')
     debugLogDecimation = LaunchConfiguration('debugLogDecimation')
+    gravityLevelQx  = LaunchConfiguration('gravityLevelQx')
+    gravityLevelQy  = LaunchConfiguration('gravityLevelQy')
+    gravityLevelQz  = LaunchConfiguration('gravityLevelQz')
+    gravityLevelQw  = LaunchConfiguration('gravityLevelQw')
 
     workspace_root = os.path.dirname( # 连续四次 dirname() 回到工作区根目录
         os.path.dirname(
@@ -80,6 +84,10 @@ def generate_launch_description():
     declare_enable_debug_log  = DeclareLaunchArgument('enableDebugLog',    default_value='true',   description='是否记录规划/控制调试 CSV 日志')
     declare_debug_log_dir     = DeclareLaunchArgument('debugLogDir',       default_value=default_debug_log_dir, description='规划/控制调试日志目录')
     declare_debug_log_decimation = DeclareLaunchArgument('debugLogDecimation', default_value='10', description='调试日志采样降频系数')
+    declare_gravity_level_qx  = DeclareLaunchArgument('gravityLevelQx', default_value='-0.004276', description='重力摆平补偿四元数 x')
+    declare_gravity_level_qy  = DeclareLaunchArgument('gravityLevelQy', default_value='0.043092', description='重力摆平补偿四元数 y')
+    declare_gravity_level_qz  = DeclareLaunchArgument('gravityLevelQz', default_value='0.000000', description='重力摆平补偿四元数 z')
+    declare_gravity_level_qw  = DeclareLaunchArgument('gravityLevelQw', default_value='0.999062', description='重力摆平补偿四元数 w')
 
     # ------------------------------------------------------------------ #
     #  FAST-LIO2（在本 launch 内直接以 Node 方式启动，以便设置 remappings）
@@ -113,6 +121,12 @@ def generate_launch_description():
         package='vehicle_simulator',
         executable='registeredScanFrameRelay',
         name='registered_scan_frame_relay',
+        parameters=[{
+            'gravity_level_qx': gravityLevelQx,
+            'gravity_level_qy': gravityLevelQy,
+            'gravity_level_qz': gravityLevelQz,
+            'gravity_level_qw': gravityLevelQw,
+        }],
         output='screen',
     )
 
@@ -123,6 +137,12 @@ def generate_launch_description():
         package='vehicle_simulator',
         executable='odom_frame_relay.py',
         name='odom_frame_relay',
+        parameters=[{
+            'gravity_level_qx': gravityLevelQx,
+            'gravity_level_qy': gravityLevelQy,
+            'gravity_level_qz': gravityLevelQz,
+            'gravity_level_qw': gravityLevelQw,
+        }],
         output='screen',
     )
 
@@ -217,7 +237,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='tf_map_to_camera_init',
-        arguments=['0', '0', '0', '-0.5', '0.5', '-0.5', '0.5', 'map', 'camera_init'],
+        arguments=['0', '0', '0', '-0.523215', '0.518939', '-0.480123', '0.475847', 'map', 'camera_init'],
     )
 
     tf_body_to_sensor = Node(
@@ -253,6 +273,10 @@ def generate_launch_description():
     ld.add_action(declare_enable_debug_log)
     ld.add_action(declare_debug_log_dir)
     ld.add_action(declare_debug_log_decimation)
+    ld.add_action(declare_gravity_level_qx)
+    ld.add_action(declare_gravity_level_qy)
+    ld.add_action(declare_gravity_level_qz)
+    ld.add_action(declare_gravity_level_qw)
     ld.add_action(LogInfo(msg=['Navigation debug logs: ', debugLogDir]))
 
     # 全局设置 use_sim_time，作用于本 launch 内所有后续节点
