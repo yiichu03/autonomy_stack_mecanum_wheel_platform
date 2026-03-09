@@ -180,7 +180,7 @@ def generate_launch_description():
             'goalX':         vehicleX,
             'goalY':         vehicleY,
             'maxSpeed':      maxSpeed,
-            'twoWayDrive':   'false',
+            'twoWayDrive':   'true',  # false
             'autonomyMode':  'false',
             'vehicleLength': '0.70',
             'vehicleWidth':  '0.60',

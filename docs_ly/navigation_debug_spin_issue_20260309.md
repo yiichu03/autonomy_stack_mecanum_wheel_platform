@@ -68,6 +68,10 @@ RViz Goalpoint
 
 如果不先看 launch，你会误以为代码默认还是原仓库那套平台逻辑。
 
+==Scout是允许倒车的!!!!!!==
+
+
+
 ### 4.2 `local_planner.launch`
 
 文件：

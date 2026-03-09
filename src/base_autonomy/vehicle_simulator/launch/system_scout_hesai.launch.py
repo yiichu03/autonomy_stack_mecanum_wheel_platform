@@ -173,7 +173,7 @@ def generate_launch_description():
             'goalX':         vehicleX,
             'goalY':         vehicleY,
             'maxSpeed':      maxSpeed,
-            'twoWayDrive':   'false',    # 表示规划器/控制器按“不允许倒车优先”的思路工作。 #####################
+            'twoWayDrive':   'true',    #  false表示规划器/控制器按“不允许倒车优先”的思路工作。 #####################
             'autonomyMode':  'false',
             'vehicleLength': '0.70',
             'vehicleWidth':  '0.60',

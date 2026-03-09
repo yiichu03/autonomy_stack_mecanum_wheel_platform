@@ -1,12 +1,33 @@
 localPlanner:
   ros__parameters:
+    # 标准轮式底盘保持负值。
+    # 如果设为正值，会启用更偏向全向底盘的近目标打分逻辑。
     omniDirGoalThre: -1.0
 
 pathFollower:
   ros__parameters:
+    # 标准轮式底盘保持负值。
+    # 如果设为正值，控制器可能会使用横向速度(cmd_vel.linear.y)，
+    # 并启用更适合全向底盘的近目标朝向放宽逻辑。
     omniDirGoalThre: -1.0
+    # 车辆已经在运动时的航向比例增益。
+    # 调大：前进过程中的转向修正更积极。
+    # 调小：运动更平顺，但转弯和纠偏会更迟钝。
     yawRateGain: 4.0
-    stopYawRateGain: 6.0
+    # 车辆接近静止时的航向比例增益。
+    # 调大：原地或起步前的转头更快。
+    # 调小：起始转向更柔和，但容易显得犹豫。
+    stopYawRateGain: 4.0   # 6.0
+    # 角速度上限，单位是 deg/s。  360 deg = 1 圈  180 deg = π rad  
+    # 调大：允许转得更快，但更容易过冲或左右摆。
+    # 调小：动作更稳，但可能会觉得对准目标太慢。
     maxYawRate: 60.0
-    dirDiffThre: 0.30
-    stopDisThre: 0.15
+    # 允许开始明显前进的航向误差阈值，单位是 rad。 30 deg ≈ 0.524 rad 45 deg ≈ 0.785 rad
+    # 一般来说，只有 abs(dirDiff) 小于这个值时，车才会更愿意起速前进。
+    # 调大：车在还没完全对正时就会更早开始往前走。
+    # 调小：更偏向“先转正，再前进”。
+    dirDiffThre: 0.50   # 0.30
+    # 到目标点的停止阈值，单位是米。
+    # 当跟踪点距离小于这个值，且 noRotAtGoal=true 时，
+    # 控制器会在接近目标时抑制转向命令。
+    stopDisThre: 0.30 # 0.15
