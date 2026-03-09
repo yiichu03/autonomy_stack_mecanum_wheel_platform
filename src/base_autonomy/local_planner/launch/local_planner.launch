@@ -62,6 +62,13 @@
     <param name="goalBehindRange" value="0.35" />
     <param name="freezeAng" value="90.0" />
     <param name="freezeTime" value="0.0" />
+    <param name="enablePathGroupHysteresis" value="true" />
+    <param name="pathGroupHoldTime" value="0.6" />
+    <param name="pathGroupScoreRatioThre" value="0.85" />
+    <param name="enablePathRepublishSuppression" value="true" />
+    <param name="pathRepublishMinInterval" value="0.75" />
+    <param name="pathRepublishPointDiffThre" value="3" />
+    <param name="pathRepublishEndpointDiffThre" value="0.15" />
     <param name="goalX" value="$(var goalX)" />
     <param name="goalY" value="$(var goalY)" />
     <param name="enableDebugLog" value="$(var enableDebugLog)" />

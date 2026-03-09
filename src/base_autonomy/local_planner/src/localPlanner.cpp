@@ -102,6 +102,13 @@ double goalY = 0;
 bool enableDebugLog = false;
 string debugLogDir = "/tmp/autonomy_stack_debug";
 int debugLogDecimation = 10;
+bool enablePathGroupHysteresis = true;
+double pathGroupHoldTime = 0.6;
+double pathGroupScoreRatioThre = 0.85;
+bool enablePathRepublishSuppression = true;
+double pathRepublishMinInterval = 0.75;
+int pathRepublishPointDiffThre = 3;
+double pathRepublishEndpointDiffThre = 0.15;
 
 float joySpeed = 0;
 float joySpeedRaw = 0;
@@ -157,6 +164,16 @@ rclcpp::Node::SharedPtr nh;
 std::ofstream plannerDebugFile;
 bool plannerGoalUpdated = false;
 int plannerDebugLogCounter = 0;
+int stickySelectedGroupRaw = -1;
+double stickySelectedGroupTime = -1.0;
+bool lastPublishedPathValid = false;
+bool lastPublishedPathFound = false;
+int lastPublishedGroupRaw = -1;
+float lastPublishedRotDeg = 0.0f;
+int lastPublishedPathPointCount = 0;
+float lastPublishedPathEndX = 0.0f;
+float lastPublishedPathEndY = 0.0f;
+double lastPathPublishTime = -1.0;
 
 bool ensureDirectoryTree(const std::string& dirPath)
 {
@@ -197,7 +214,8 @@ bool initPlannerDebugFile()
         << "planner_cloud_points,planner_left_points,planner_right_points,"
         << "obstacle_left_points,obstacle_right_points,check_obstacle,freeze_status,preselected_group,"
         << "selected_group_raw,selected_rot_deg,selected_path_group,path_found,"
-        << "path_points,path_scale,path_range,penalty_score,slow_level\n";
+        << "path_points,path_scale,path_range,penalty_score,slow_level,"
+        << "candidate_group_raw,candidate_rot_deg,selection_held,path_published\n";
   }
 
   return true;
@@ -317,6 +335,8 @@ void goalHandler(const geometry_msgs::msg::PointStamped::ConstSharedPtr goal)
   goalX = goal->point.x;
   goalY = goal->point.y;
   plannerGoalUpdated = true;
+  stickySelectedGroupRaw = -1;
+  stickySelectedGroupTime = -1.0;
   RCLCPP_INFO(nh->get_logger(), "Waypoint received: x=%.2f y=%.2f z=%.2f", goal->point.x, goal->point.y, goal->point.z);
 }
 
@@ -620,6 +640,13 @@ int main(int argc, char** argv)
   nh->declare_parameter<bool>("enableDebugLog", enableDebugLog);
   nh->declare_parameter<std::string>("debugLogDir", debugLogDir);
   nh->declare_parameter<int>("debugLogDecimation", debugLogDecimation);
+  nh->declare_parameter<bool>("enablePathGroupHysteresis", enablePathGroupHysteresis);
+  nh->declare_parameter<double>("pathGroupHoldTime", pathGroupHoldTime);
+  nh->declare_parameter<double>("pathGroupScoreRatioThre", pathGroupScoreRatioThre);
+  nh->declare_parameter<bool>("enablePathRepublishSuppression", enablePathRepublishSuppression);
+  nh->declare_parameter<double>("pathRepublishMinInterval", pathRepublishMinInterval);
+  nh->declare_parameter<int>("pathRepublishPointDiffThre", pathRepublishPointDiffThre);
+  nh->declare_parameter<double>("pathRepublishEndpointDiffThre", pathRepublishEndpointDiffThre);
 
   nh->get_parameter("pathFolder", pathFolder);
   nh->get_parameter("vehicleLength", vehicleLength);
@@ -669,6 +696,13 @@ int main(int argc, char** argv)
   nh->get_parameter("enableDebugLog", enableDebugLog);
   nh->get_parameter("debugLogDir", debugLogDir);
   nh->get_parameter("debugLogDecimation", debugLogDecimation);
+  nh->get_parameter("enablePathGroupHysteresis", enablePathGroupHysteresis);
+  nh->get_parameter("pathGroupHoldTime", pathGroupHoldTime);
+  nh->get_parameter("pathGroupScoreRatioThre", pathGroupScoreRatioThre);
+  nh->get_parameter("enablePathRepublishSuppression", enablePathRepublishSuppression);
+  nh->get_parameter("pathRepublishMinInterval", pathRepublishMinInterval);
+  nh->get_parameter("pathRepublishPointDiffThre", pathRepublishPointDiffThre);
+  nh->get_parameter("pathRepublishEndpointDiffThre", pathRepublishEndpointDiffThre);
 
   auto subOdometry = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, odometryHandler);
 
@@ -900,6 +934,10 @@ int main(int argc, char** argv)
       float finalPenaltyScore = 0.0;
       float finalPathRange = pathRange;
       float finalPathScale = pathScale;
+      int candidateGroupRaw = -1;
+      float candidateRotDeg = 0.0;
+      bool selectionHeld = false;
+      bool pathPublished = false;
 
       while (pathScale >= minPathScale && pathRange >= minPathRange) {
         for (int i = 0; i < 36 * pathNum; i++) {
@@ -1009,8 +1047,12 @@ int main(int argc, char** argv)
         }
 
         int selectedGroupID = -1;
+        float selectedGroupScore = 0.0f;
         if (preSelectedGroupID >= 0) {
           selectedGroupID = preSelectedGroupID;
+          if (selectedGroupID >= 0 && selectedGroupID < 36 * groupNum) {
+            selectedGroupScore = clearPathPerGroupScore[selectedGroupID];
+          }
         } else {
           float maxScore = 0;
           for (int i = 0; i < 36 * groupNum; i++) {
@@ -1024,6 +1066,40 @@ int main(int argc, char** argv)
               selectedGroupID = i;
             }
           }
+          selectedGroupScore = maxScore;
+        }
+
+        candidateGroupRaw = selectedGroupID;
+        candidateRotDeg = 0.0f;
+        if (candidateGroupRaw >= 0) {
+          candidateRotDeg = 10.0f * int(candidateGroupRaw / groupNum) - 180.0f;
+        }
+
+        if (preSelectedGroupID < 0 && enablePathGroupHysteresis &&
+            selectedGroupID >= 0 && stickySelectedGroupRaw >= 0 &&
+            stickySelectedGroupRaw < 36 * groupNum &&
+            selectedGroupID != stickySelectedGroupRaw) {
+          float stickyScore = clearPathPerGroupScore[stickySelectedGroupRaw];
+          int stickyPathNum = clearPathPerGroupNum[stickySelectedGroupRaw];
+          float stickyRotDeg = 10.0f * int(stickySelectedGroupRaw / groupNum) - 180.0f;
+          bool stickyAllowed =
+              !checkRotObstacle || (stickyRotDeg > minObsAngCW && stickyRotDeg < minObsAngCCW);
+          bool withinHoldWindow =
+              stickySelectedGroupTime >= 0.0 &&
+              odomTime - stickySelectedGroupTime < pathGroupHoldTime;
+          bool stickyCompetitive =
+              selectedGroupScore <= 0.0f ||
+              stickyScore >= selectedGroupScore * pathGroupScoreRatioThre;
+          if (stickyAllowed && stickyPathNum > 0 && stickyScore > 0.0f &&
+              withinHoldWindow && stickyCompetitive) {
+            selectedGroupID = stickySelectedGroupRaw;
+            selectionHeld = true;
+          }
+        }
+
+        if (selectedGroupID >= 0 && selectedGroupID != stickySelectedGroupRaw) {
+          stickySelectedGroupRaw = selectedGroupID;
+          stickySelectedGroupTime = odomTime;
         }
 
         float penaltyScore = 0;
@@ -1068,9 +1144,40 @@ int main(int argc, char** argv)
           }
           selectedPathPointCount = path.poses.size();
 
-          path.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
-          path.header.frame_id = "vehicle";
-          pubPath->publish(path);
+          float pathEndX = 0.0f;
+          float pathEndY = 0.0f;
+          if (selectedPathPointCount > 0) {
+            pathEndX = path.poses[selectedPathPointCount - 1].pose.position.x;
+            pathEndY = path.poses[selectedPathPointCount - 1].pose.position.y;
+          }
+
+          bool shouldPublishPath = true;
+          if (enablePathRepublishSuppression) {
+            shouldPublishPath =
+                !lastPublishedPathValid || !lastPublishedPathFound ||
+                lastPublishedGroupRaw != selectedGroupRaw ||
+                fabs(lastPublishedRotDeg - selectedRotDeg) > 1e-3 ||
+                abs(lastPublishedPathPointCount - selectedPathPointCount) >= pathRepublishPointDiffThre ||
+                hypot(pathEndX - lastPublishedPathEndX, pathEndY - lastPublishedPathEndY) >= pathRepublishEndpointDiffThre ||
+                plannerGoalUpdated ||
+                lastPathPublishTime < 0.0 ||
+                odomTime - lastPathPublishTime >= pathRepublishMinInterval;
+          }
+
+          if (shouldPublishPath) {
+            path.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
+            path.header.frame_id = "vehicle";
+            pubPath->publish(path);
+            pathPublished = true;
+            lastPublishedPathValid = true;
+            lastPublishedPathFound = true;
+            lastPublishedGroupRaw = selectedGroupRaw;
+            lastPublishedRotDeg = selectedRotDeg;
+            lastPublishedPathPointCount = selectedPathPointCount;
+            lastPublishedPathEndX = pathEndX;
+            lastPublishedPathEndY = pathEndY;
+            lastPathPublishTime = odomTime;
+          }
 
           #if PLOTPATHSET == 1
           freePaths->clear();
@@ -1142,9 +1249,29 @@ int main(int argc, char** argv)
         path.poses[0].pose.position.y = 0;
         path.poses[0].pose.position.z = 0;
 
-        path.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
-        path.header.frame_id = "vehicle";
-        pubPath->publish(path);
+        bool shouldPublishStopPath = true;
+        if (enablePathRepublishSuppression) {
+          shouldPublishStopPath =
+              !lastPublishedPathValid || lastPublishedPathFound ||
+              lastPublishedPathPointCount != 1 || plannerGoalUpdated ||
+              lastPathPublishTime < 0.0 ||
+              odomTime - lastPathPublishTime >= pathRepublishMinInterval;
+        }
+
+        if (shouldPublishStopPath) {
+          path.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
+          path.header.frame_id = "vehicle";
+          pubPath->publish(path);
+          pathPublished = true;
+          lastPublishedPathValid = true;
+          lastPublishedPathFound = false;
+          lastPublishedGroupRaw = -1;
+          lastPublishedRotDeg = 0.0f;
+          lastPublishedPathPointCount = 1;
+          lastPublishedPathEndX = 0.0f;
+          lastPublishedPathEndY = 0.0f;
+          lastPathPublishTime = odomTime;
+        }
 
         #if PLOTPATHSET == 1
         freePaths->clear();
@@ -1183,7 +1310,11 @@ int main(int argc, char** argv)
                          << finalPathScale << ","
                          << finalPathRange << ","
                          << finalPenaltyScore << ","
-                         << static_cast<int>(slow.data) << "\n";
+                         << static_cast<int>(slow.data) << ","
+                         << candidateGroupRaw << ","
+                         << candidateRotDeg << ","
+                         << (selectionHeld ? 1 : 0) << ","
+                         << (pathPublished ? 1 : 0) << "\n";
         plannerDebugFile.flush();
       }
       plannerDebugLogCounter++;
