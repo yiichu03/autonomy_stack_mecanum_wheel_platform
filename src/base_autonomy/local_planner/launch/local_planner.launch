@@ -60,6 +60,7 @@
     <param name="joyToCheckObstacleDelay" value="5.0" />
     <param name="goalClearRange" value="0.35" />
     <param name="goalBehindRange" value="0.35" />
+    <param name="goalUpdateDistThre" value="0.15" />
     <param name="freezeAng" value="90.0" />
     <param name="freezeTime" value="0.0" />
     <param name="enablePathGroupHysteresis" value="true" />

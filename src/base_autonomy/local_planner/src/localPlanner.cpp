@@ -99,6 +99,7 @@ double goalClearRange = 0.5;
 double goalBehindRange = 0.8;
 double goalX = 0;
 double goalY = 0;
+double goalUpdateDistThre = 0.15;
 bool enableDebugLog = false;
 string debugLogDir = "/tmp/autonomy_stack_debug";
 int debugLogDecimation = 10;
@@ -166,6 +167,7 @@ bool plannerGoalUpdated = false;
 int plannerDebugLogCounter = 0;
 int stickySelectedGroupRaw = -1;
 double stickySelectedGroupTime = -1.0;
+bool goalInitialized = false;
 bool lastPublishedPathValid = false;
 bool lastPublishedPathFound = false;
 int lastPublishedGroupRaw = -1;
@@ -332,12 +334,25 @@ void joystickHandler(const sensor_msgs::msg::Joy::ConstSharedPtr joy)
 
 void goalHandler(const geometry_msgs::msg::PointStamped::ConstSharedPtr goal)
 {
-  goalX = goal->point.x;
-  goalY = goal->point.y;
+  const double newGoalX = goal->point.x;
+  const double newGoalY = goal->point.y;
+  const double goalDelta = goalInitialized ? hypot(newGoalX - goalX, newGoalY - goalY) : 0.0;
+  const bool acceptGoal = !goalInitialized || goalDelta >= goalUpdateDistThre;
+
+  if (!acceptGoal) {
+    return;
+  }
+
+  goalX = newGoalX;
+  goalY = newGoalY;
+  goalInitialized = fabs(goalX) > 1e-6 || fabs(goalY) > 1e-6;
   plannerGoalUpdated = true;
   stickySelectedGroupRaw = -1;
   stickySelectedGroupTime = -1.0;
-  RCLCPP_INFO(nh->get_logger(), "Waypoint received: x=%.2f y=%.2f z=%.2f", goal->point.x, goal->point.y, goal->point.z);
+  RCLCPP_INFO(
+      nh->get_logger(),
+      "Waypoint accepted: x=%.2f y=%.2f z=%.2f delta=%.2f",
+      goal->point.x, goal->point.y, goal->point.z, goalDelta);
 }
 
 void speedHandler(const std_msgs::msg::Float32::ConstSharedPtr speed)
@@ -637,6 +652,7 @@ int main(int argc, char** argv)
   nh->declare_parameter<double>("goalBehindRange", goalBehindRange);
   nh->declare_parameter<double>("goalX", goalX);
   nh->declare_parameter<double>("goalY", goalY);
+  nh->declare_parameter<double>("goalUpdateDistThre", goalUpdateDistThre);
   nh->declare_parameter<bool>("enableDebugLog", enableDebugLog);
   nh->declare_parameter<std::string>("debugLogDir", debugLogDir);
   nh->declare_parameter<int>("debugLogDecimation", debugLogDecimation);
@@ -693,6 +709,7 @@ int main(int argc, char** argv)
   nh->get_parameter("goalBehindRange", goalBehindRange);
   nh->get_parameter("goalX", goalX);
   nh->get_parameter("goalY", goalY);
+  nh->get_parameter("goalUpdateDistThre", goalUpdateDistThre);
   nh->get_parameter("enableDebugLog", enableDebugLog);
   nh->get_parameter("debugLogDir", debugLogDir);
   nh->get_parameter("debugLogDecimation", debugLogDecimation);
@@ -743,6 +760,8 @@ int main(int argc, char** argv)
     if (joySpeed < 0) joySpeed = 0;
     else if (joySpeed > 1.0) joySpeed = 1.0;
   }
+
+  goalInitialized = true;
 
   for (int i = 0; i < laserCloudStackNum; i++) {
     laserCloudStack[i].reset(new pcl::PointCloud<pcl::PointXYZI>());
