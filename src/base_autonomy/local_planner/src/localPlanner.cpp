@@ -891,6 +891,11 @@ int main(int argc, char** argv)
         relativeGoalDis = sqrt(relativeGoalX * relativeGoalX + relativeGoalY * relativeGoalY);
         joyDir = atan2(relativeGoalY, relativeGoalX) * 180 / PI;
         
+        if (relativeGoalDis < goalClearRange) {
+          relativeGoalDis = 0;
+          joyDir = 0;
+        }
+        
         if (fabs(joyDir) > freezeAng && relativeGoalDis < goalBehindRange) {
           relativeGoalDis = 0;
           joyDir = 0;

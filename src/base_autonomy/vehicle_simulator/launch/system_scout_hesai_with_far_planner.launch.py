@@ -129,6 +129,7 @@ def generate_launch_description():
         remappings=[
             ('/Odometry',         '/state_estimation_raw'),
             ('/cloud_registered', '/registered_scan_raw'),
+            ('/path',             '/fastlio_path'),
         ],
         output='screen',
     )
