@@ -1,21 +1,21 @@
-# 当前代码相对原始基线 `75f60cf8f4f3f4cde6e2b08f50577546d7f08dd7` 的差异说明
+# 项目代码阅读导图与相对原始基线 `75f60cf8f4f3f4cde6e2b08f50577546d7f08dd7` 的差异说明
 
 ## 1. 文档目的
 
-本文档用于回答两个问题：
+本文档用于回答三个问题：
 
 1. 当前工作区代码，相对原始基线 `75f60cf8f4f3f4cde6e2b08f50577546d7f08dd7`，到底改了哪些地方。
 2. 这些改动里，哪些只是文档/辅助改动，哪些真正可能改变导航行为，因而有可能引入实机问题。
+3. 如果你现在要开始读这个项目代码，应该先理解哪些包、哪些文件、哪些话题链路。
 
-本文档适合在一起看代码前先快速建立共同上下文。
+本文档适合在一起看代码前先快速建立共同上下文，也适合看代码时当作“导图 + 对比底稿”。
 
 ## 2. 对比范围
 
 - 基线提交：`75f60cf8f4f3f4cde6e2b08f50577546d7f08dd7`
-- 当前提交：`645d5ca4bc610e757b6d0a142afd1651bdde16b9`
-- 生成文档时工作区状态：`git status --short` 为空，说明当前工作区干净，没有额外未提交改动
-- 对比命令语义：本文档基于 `git diff 75f60cf8f4f3f4cde6e2b08f50577546d7f08dd7`
-- 统计口径说明：下文的“25 个文件”不包含本文档 `docs_ly/compare_current_vs_75f60cf8.md` 自身
+- 当前参考对象：当前工作树（`HEAD = 3d75c2a239ecf3c900425cc6ac37600dea89d3c7`）
+- 对比命令语义：本文档基于 `git diff 75f60cf8f4f3f4cde6e2b08f50577546d7f08dd7`，并结合当前工作树中的手工调整做文字说明
+- 统计口径说明：下文的“24 个文件”不包含本文档 `docs_ly/codebase_guide_and_compare_vs_75f60cf8.md` 自身
 
 ## 3. 总体差异概览
 
@@ -24,7 +24,7 @@
 - 总共变更 24 个文件
 - 其中新增 11 个文件
 - 修改 13 个文件
-- 总体统计：`2822 insertions(+), 41 deletions(-)`
+- 总体统计：`2707 insertions(+), 36 deletions(-)`
 
 ### 3.2 高层总结
 
@@ -43,9 +43,291 @@
 3. `standard.yaml` 中 yaw gain / maxYawRate / dirDiffThre 的改动
 4. `system_scout_hesai*.launch.py` 中对 `twoWayDrive`、车体尺寸、TF、话题 remap 的新设定
 
-## 4. 模块级差异
+## 4. 项目阅读导图
 
-### 4.1 系统集成层：从“原仓库通用入口”变为“当前硬件定制入口”
+这一节不是“对比基线”，而是帮助你快速建立对当前项目结构的直觉。建议先读这一节，再往下看相对基线的差异。
+
+### 4.1 先抓当前运行主链路
+
+如果你现在跑的是 `system_scout_hesai.launch.py` 或 `system_scout_hesai_with_far_planner.launch.py`，可以先把运行链路记成下面这样：
+
+```text
+FAST-LIO
+  /Odometry
+    -> /state_estimation_raw
+    -> odom_frame_relay.py
+    -> /state_estimation
+
+  /cloud_registered
+    -> /registered_scan_raw
+    -> registeredScanFrameRelay
+    -> /registered_scan
+
+/state_estimation + /registered_scan
+  -> sensor_scan_generation
+     -> /state_estimation_at_scan
+     -> /sensor_scan
+
+/state_estimation + /registered_scan
+  -> terrain_analysis
+     -> /terrain_map
+
+/terrain_map + /registered_scan + /state_estimation
+  -> terrain_analysis_ext
+     -> /terrain_map_ext
+
+/goal_point
+  -> far_planner
+  -> /way_point
+
+/way_point + /state_estimation + /registered_scan + /terrain_map
+  -> localPlanner
+  -> /path + /slow_down
+
+/path + /state_estimation + /slow_down
+  -> pathFollower
+  -> /cmd_vel
+```
+
+最重要的理解是：
+
+1. SLAM 和后续导航的交接点，不是在 `localPlanner.cpp`，而是在 `/state_estimation_raw`、`/registered_scan_raw` 经过 relay 之后形成的 `/state_estimation`、`/registered_scan`
+2. `localPlanner` 是“规划器”，负责生成 `/path`
+3. `pathFollower` 是“控制器”，负责把 `/path` 变成 `/cmd_vel`
+4. `far_planner` 不是必选链路，只有你用 Goalpoint 做更远距离到点规划时才会插进来
+
+补充一个容易误解的点：
+
+- `sensor_scan_generation` 虽然在主 launch 里会启动，但当前 `localPlanner` / `pathFollower` 主链路并不直接消费它输出的 `/state_estimation_at_scan` 和 `/sensor_scan`
+- `terrain_analysis_ext` 对 FAR 这条链更重要；`localPlanner` 当前直接订阅的是 `/terrain_map`
+
+### 4.2 `src` 目录应该怎么理解
+
+当前仓库的 `src` 可以先按 5 个大类来理解：
+
+- `src/base_autonomy`
+  这是最靠近“底盘局部导航”的一层，当前实机 debug 最值得优先看。
+- `src/route_planner`
+  这是更高层的路径/路线规划层，当前最相关的是 `far_planner`。
+- `src/exploration_planner`
+  这是探索式规划，不是你现在“点一个 Goalpoint 到那里去”这条主链路的核心。
+- `src/slam`
+  这是仓库自带的 SLAM 相关代码和依赖，但你当前主入口实际接的是 `fast_lio`，所以这层不是第一优先级。
+- `src/utilities`
+  这是各种工具包，例如 RViz 插件、手柄遥控、驱动、串口、domain bridge。
+
+### 4.3 `base_autonomy` 下面这些包分别是干什么的
+
+- `vehicle_simulator`
+  名字容易误导。它不只是“仿真器”，当前更重要的作用是承载主 launch、RViz 配置、relay 节点、TF 桥接，以及一个可选的模拟底盘节点。
+- `sensor_scan_generation`
+  把 `/state_estimation` 和 `/registered_scan` 做时间同步，生成“扫描时刻的位姿”和“传感器坐标系下的扫描”。它更像数据整理层，不是最终控制逻辑本身。
+- `terrain_analysis`
+  把当前点云整理成局部地形/可通行性表示，输出 `/terrain_map`。
+- `terrain_analysis_ext`
+  在 `/terrain_map` 基础上做更大范围或连通性检查，输出 `/terrain_map_ext`。这层主要给更高层规划器，尤其是 FAR，用得更多。
+- `local_planner`
+  当前最核心的包。里面其实有两个节点：
+  - `localPlanner`：根据目标点、障碍和地形选一条局部路径，输出 `/path`
+  - `pathFollower`：根据 `/path` 和当前位姿生成 `/cmd_vel`
+- `visualization_tools`
+  主要是可视化和运行数据辅助，不是控制主逻辑。
+- `waypoint_example`
+  示例节点，可以先不看。
+
+如果你的目标是 debug “为什么会转圈 / 为什么 Goalpoint 不接管”，`base_autonomy` 里优先级最高的是：
+
+1. `vehicle_simulator`
+2. `local_planner`
+3. `terrain_analysis` / `terrain_analysis_ext`
+4. `sensor_scan_generation`
+
+### 4.4 哪些包现在可以先不深挖
+
+为了把阅读范围压到两小时内，下面这些可以先知道名字，但不必现在深读：
+
+- `src/exploration_planner/tare_planner`
+  这是探索规划，不是当前点到点导航主链路。
+- `src/route_planner/boundary_handler`、`src/route_planner/graph_decoder`、`src/route_planner/visibility_graph_msg`
+  这些更像 FAR 的配套组件，不是你理解 `/cmd_vel` 异常的第一现场。
+- `src/slam/arise_slam_mid360`
+  当前主 launch 没直接走它。
+- `src/utilities/ROS-TCP-Endpoint`、`domain_bridge`、`serial`
+  这些属于桥接/外设/集成工具层。
+- `src/utilities/teleop_*`
+  这些更偏手动控制和 RViz 交互辅助。
+
+### 4.5 SLAM 和后续模块到底在哪里交接
+
+这一点非常关键，因为很多人会自然地以为“SLAM 的输出直接被 planner 用了”，但当前项目中间其实隔了几层适配。
+
+交接点可以按下面 4 步理解：
+
+1. `fast_lio` 原始输出
+   - `/Odometry`
+   - `/cloud_registered`
+2. 进入当前项目后的第一层适配
+   - `/Odometry -> /state_estimation_raw -> odom_frame_relay.py -> /state_estimation`
+   - `/cloud_registered -> /registered_scan_raw -> registeredScanFrameRelay -> /registered_scan`
+3. 进入地形与扫描整理层
+   - `/registered_scan -> terrain_analysis -> /terrain_map`
+   - `/terrain_map -> terrain_analysis_ext -> /terrain_map_ext`
+   - `/state_estimation + /registered_scan -> sensor_scan_generation`
+4. 进入规划与控制层
+   - `/way_point -> localPlanner -> /path`
+   - `/path -> pathFollower -> /cmd_vel`
+
+所以如果你怀疑“SLAM 明明定位正常，但车为什么行为不对”，真正要检查的是这几个交接点：
+
+- frame 是否被转对了
+- `/state_estimation` 的 yaw 是否符合控制器预期
+- `/registered_scan` 在 planner 看来障碍是不是落到了正确位置
+- `/terrain_map` 是否把可通行区域表达正确
+
+### 4.6 Plan 和 Control 在这个项目里是怎么拆开的
+
+`local_planner` 这个包虽然名字叫一个包，但内部其实分成两段逻辑：
+
+- `localPlanner.cpp`
+  更接近“局部规划器”。它吃进目标点、障碍、地形和车体状态，选择一条合适的局部路径，发布 `/path`。
+- `pathFollower.cpp`
+  更接近“控制器”。它吃进 `/path` 和当前车体状态，算出车速和角速度，发布 `/cmd_vel`。
+
+可以把它们记成：
+
+- `localPlanner` 决定“往哪走”
+- `pathFollower` 决定“怎么打轮、怎么给速度”
+
+当前这两个文件分别是：
+
+- `src/base_autonomy/local_planner/src/localPlanner.cpp`
+- `src/base_autonomy/local_planner/src/pathFollower.cpp`
+
+### 4.7 参数应该去哪里看
+
+这个项目的参数分散在几层，不同层负责的事情不一样：
+
+- `system_scout_hesai.launch.py` / `system_scout_hesai_with_far_planner.launch.py`
+  这里看系统集成参数：启哪些节点、话题 remap、TF、`twoWayDrive`、车体尺寸、debug log、是否带 FAR。
+- `src/base_autonomy/local_planner/launch/local_planner.launch`
+  这里看 `localPlanner` 和 `pathFollower` 的接线方式，以及一批直接注入 node 的运行参数。
+- `src/base_autonomy/local_planner/config/standard.yaml`
+  这里看控制风格参数，尤其是 `yawRateGain`、`stopYawRateGain`、`maxYawRate`、`dirDiffThre`。
+- `src/base_autonomy/local_planner/src/localPlanner.cpp`
+  这里看规划参数实际怎么被使用，例如 `vehicleLength`、`vehicleWidth`、`pathScale`、`goalBehindRange`、`freezeAng`。
+- `src/base_autonomy/local_planner/src/pathFollower.cpp`
+  这里看控制参数实际怎么被使用，例如 `lookAheadDis`、`yawRateGain`、`dirDiffThre`、`maxAccel`。
+- `src/base_autonomy/terrain_analysis/launch/terrain_analysis.launch`
+  这里看地形判断参数，比如 `vehicleHeight`。
+- `src/base_autonomy/terrain_analysis_ext/launch/terrain_analysis_ext.launch`
+  这里看扩展地形与连通性参数。
+- `src/route_planner/far_planner/config/*.yaml`
+  这里看 Goalpoint/FAR 的全局规划参数。
+
+### 4.8 你现在最该读的核心代码文件
+
+这一节建议不要“平均用力”。  
+对你当前最相关的两个现象:
+
+1. 小车容易左右转圈
+2. Goalpoint 看起来可达，但车没有正确规划/接管
+
+真正最该优先读的是：`1 -> 3 -> 4 -> 8 -> 9 -> 10`，如果问题和 Goalpoint 强相关，再补 `2 -> 11 -> 12`。
+
+下面每个文件都按“它负责什么、进去先看什么、它能帮你回答什么问题”来说明。
+
+1. `src/base_autonomy/vehicle_simulator/launch/system_scout_hesai.launch.py`
+   作用：这是当前实机主入口，决定整套系统真正启动了哪些节点、话题怎么 remap、TF 怎么桥接、车体尺寸和 `twoWayDrive` 怎么注入。
+   进去先看：`fast_lio` 的 remap、`odom_frame_relay.py` / `registeredScanFrameRelay` 的启动、`local_planner.launch` 的参数注入、静态 TF 两段补偿。
+   它主要回答的问题：你现在看到的 `/state_estimation`、`/registered_scan`、`/cmd_vel` 到底是不是这条链路产生的；实机跑的到底是不是你以为的那套配置。
+
+2. `src/base_autonomy/vehicle_simulator/launch/system_scout_hesai_with_far_planner.launch.py`
+   作用：这是带 Goalpoint/FAR 的主入口，比上一份 launch 多了 `/goal_point -> far_planner -> /way_point` 这条链。
+   进去先看：`far_planner.launch` 的 include、`route_planner_config`、以及它依赖的 `/state_estimation`、`/terrain_map[_ext]`、`/registered_scan`。
+   它主要回答的问题：你点击 Goalpoint 时，系统到底有没有把 FAR 真正接进来；当前 Goalpoint 异常是不是 launch 层没有接通。
+
+3. `src/base_autonomy/vehicle_simulator/scripts/odom_frame_relay.py`
+   作用：把 FAST-LIO 的里程计轴系转换成 autonomy_stack 期望的 ROS 标准轴系，产出 `/state_estimation`。
+   进去先看：文件开头的轴系说明、`Q_MAP_CAMERA_INIT`、`Q_BODY_SENSOR`、`quat_multiply()`、`rotate_vector()`、以及 `callback()` 里 pose 和 twist 是怎么一起旋转的。
+   它主要回答的问题：`vehicleYaw`、线速度、角速度的方向有没有被转对；“喜欢左右转圈”是不是朝向定义从这里开始就偏了。
+
+4. `src/base_autonomy/vehicle_simulator/src/registeredScanFrameRelay.cpp`
+   作用：把 FAST-LIO 输出的配准点云从 `camera_init` 轴系转换成 autonomy_stack 使用的 `map` 轴系，产出 `/registered_scan`。
+   进去先看：点坐标变换那 3 行 `dst.x / dst.y / dst.z`，以及输出 `frame_id = "map"`。
+   它主要回答的问题：障碍在 planner 看来是不是落到了正确的位置和正确侧边；“看起来可达但 planner 认为不通”是不是点云旋转错了。
+
+5. `src/base_autonomy/sensor_scan_generation/src/sensorScanGeneration.cpp`
+   作用：把 `/state_estimation` 和 `/registered_scan` 做时间同步，生成扫描时刻的位姿和传感器系点云。
+   进去先看：订阅 `/state_estimation` 和 `/registered_scan` 的同步方式、TF buffer/listener、输出 `/state_estimation_at_scan` 和 `/sensor_scan` 的地方。
+   它主要回答的问题：当前系统有没有在 scan 时刻位姿和点云之间做对齐；如果某些上层模块依赖 scan 时刻位姿，那里用的是哪份数据。
+   补一句：它不是你当前 `/cmd_vel` 主链路最核心的文件，但它能帮你看懂“点云和位姿是怎么对齐后再给别的模块用的”。
+
+6. `src/base_autonomy/terrain_analysis/src/terrainAnalysis.cpp`
+   作用：把当前点云整理成局部地形和可通行性表示，输出 `/terrain_map`。
+   进去先看：参数读取区，尤其是 `obstacleHeightThre`、`vehicleHeight`、`minRelZ/maxRelZ`；再看订阅 `/state_estimation`、`/registered_scan` 和发布 `/terrain_map` 的地方。
+   它主要回答的问题：系统是如何把“点云”变成“可通行/不可通行地形”的；高度阈值是不是把本来能过的地方判成了障碍。
+
+7. `src/base_autonomy/terrain_analysis_ext/src/terrainAnalysisExt.cpp`
+   作用：在局部地形基础上做更大范围的扩展和连通性检查，输出 `/terrain_map_ext`。
+   进去先看：`checkTerrainConn`、`terrainConnThre`、`localTerrainMapRadius` 等参数，以及订阅 `/terrain_map`、发布 `/terrain_map_ext` 的部分。
+   它主要回答的问题：如果用 FAR，更大范围的地形连通性是怎么来的；Goalpoint 规划时，FAR 是不是因为扩展地形判断而不愿意给出 `/way_point`。
+   补一句：对当前只看 `/cmd_vel` 的问题，它不是第一优先级；但对 Goalpoint 链路，它比 `sensor_scan_generation` 更值得后补。
+
+8. `src/base_autonomy/local_planner/src/localPlanner.cpp`
+   作用：这是局部规划核心。它根据目标点、当前姿态、障碍、地形和车体尺寸，从预生成路径集合里选出当前最合适的一条，发布 `/path`。
+   进去先看：参数读取区；然后重点看 `goalHandler()` 附近、主循环里 `relativeGoalX/Y`、`joyDir`、`freezeStatus`、`pathFound`、`selectedPathGroup` 这些变量；再看障碍点如何对路径组打分。
+   它主要回答的问题：为什么某个 goal 在你看来可达，但系统最后没有给出 path；是不是被 `twoWayDrive=false`、`goalBehindRange`、`freezeAng`、车体尺寸、障碍打分或地形阈值卡住了。
+   对你当前问题最重要的几个观察点：
+   `relativeGoalX/relativeGoalY` 表示目标在车体系里到底落在哪个方向；
+   `joyDir` 表示规划器认为应该朝哪个方向走；
+   `pathFound` 表示局部规划到底有没有找到可行路；
+   `selectedPathGroup` 表示最后选中了哪组候选路径。
+
+9. `src/base_autonomy/local_planner/src/pathFollower.cpp`
+   作用：这是控制核心。它把 `/path` 和当前 `/state_estimation` 转成最终 `/cmd_vel`。
+   进去先看：参数读取区；然后看 `pathHandler()` 如何接管新路径；再看主循环里 `dirDiff`、`vehicleYawRate`、`vehicleSpeed` 的计算，以及最后 `cmd_vel` 怎么组出来。
+   它主要回答的问题：车为什么会原地转、转得太慢、转不正、或者明明有 path 却不往前走。
+   对你当前问题最重要的几个观察点：
+   `dirDiff` 是“车头方向”和“路径方向”的偏差；
+   `yawRateGain / stopYawRateGain / maxYawRate` 决定怎么把这个偏差变成转向命令；
+   `dirDiffThre` 决定车在朝向误差多小时才愿意明显往前加速；
+   `cmd_vel.linear.x` 和 `cmd_vel.angular.z` 是最后真正送到底盘的东西。
+
+10. `src/base_autonomy/local_planner/config/standard.yaml`
+    作用：这是 `pathFollower` 控制风格最集中的配置文件。
+    进去先看：`yawRateGain`、`stopYawRateGain`、`maxYawRate`、`dirDiffThre`、`stopDisThre`。
+    它主要回答的问题：当前控制器到底是激进还是保守；“为什么它老是只转不走 / 走得很犹豫”是不是这里的阈值和增益造成的。
+    阅读方法上，最好和 `pathFollower.cpp` 对着看，因为 yaml 只告诉你数值，真正怎么用还得回到代码。
+
+11. `src/utilities/goalpoint_rviz_plugin/src/goalpoint_tool.cpp`
+    作用：这是 RViz 里 Goalpoint 工具的消息出口。你点击地图时，实际就是它在发 `/goal_point`。
+    进去先看：`onPoseSet()` 里 `/goal_point` 的 `frame_id`、`x/y/z` 如何填写，以及同时发了什么 `/joy` 消息。
+    它主要回答的问题：你点击 Goalpoint 后，系统到底收到了什么样的消息；goal 是不是固定在 `map` 系、是不是被强制压成了地面 `z=0`。
+
+12. `src/route_planner/far_planner/src/far_planner.cpp`
+    作用：这是 Goalpoint 到 `/way_point` 的主规划器。如果 Goalpoint 功能不正常，这个文件通常是最终要看的地方。
+    进去先看：初始化时订阅/发布了哪些话题；`WaypointCallBack()` 在收到 `/goal_point` 后做了什么；以及它对 graph 初始化、frame 转换和目标更新的前置条件。
+    它主要回答的问题：为什么点击了 Goalpoint 却没有持续产生 `/way_point`；是不是 graph 还没初始化、frame 不对、或者 FAR 内部根本没接受这个目标。
+
+如果只给你两小时，建议阅读节奏是：
+
+1. 先用 15-20 分钟读 `system_scout_hesai.launch.py`
+2. 再用 15 分钟读 `odom_frame_relay.py` 和 `registeredScanFrameRelay.cpp`
+3. 然后把 40-50 分钟压给 `localPlanner.cpp` 和 `pathFollower.cpp`
+4. 再用 10 分钟对照 `standard.yaml`
+5. 最后如果 Goalpoint 是重点，再读 `system_scout_hesai_with_far_planner.launch.py`、`goalpoint_tool.cpp`、`far_planner.cpp`
+
+### 4.9 读代码时最值得先回答的 5 个问题
+
+1. `/state_estimation` 的 frame、yaw、twist 方向到底是不是控制器假设的那套？
+2. `/registered_scan` 在 planner 看来，障碍是不是落在正确侧边和正确高度？
+3. `localPlanner` 是否真的找到了 path，还是目标在它看来被障碍/尺寸/后向约束挡住了？
+4. `pathFollower` 算出来的 `dirDiff`、`vehicleYawRate`、`vehicleSpeed` 是否符合你的直觉？
+5. 如果使用 Goalpoint，`/goal_point` 是否真的稳定地变成了 `/way_point`？
+
+## 5. 模块级差异
+
+### 5.1 系统集成层：从“原仓库通用入口”变为“当前硬件定制入口”
 
 这是本次对比里最关键的变化。
 
@@ -85,7 +367,7 @@
 - 当前代码已经演化为“当前硬件适配后的系统版本”
 - 因此后续 debug 时，不能只盯 `local_planner`，必须同时检查这一层的 relay、TF 和 remap
 
-### 4.2 车体坐标系和点云坐标系修正层
+### 5.2 车体坐标系和点云坐标系修正层
 
 这是当前代码相对原始基线最核心的新功能层。
 
@@ -139,7 +421,7 @@
 - `free_paths` 朝向异常
 - 看起来 goal 可达，但局部规划认为不可达
 
-### 4.3 `sensor_scan_generation`：从默认 frame 假设改为显式 TF 查询
+### 5.3 `sensor_scan_generation`：从默认 frame 假设改为显式 TF 查询
 
 修改文件：
 
@@ -166,7 +448,7 @@
 - 某次 lookup 失败时，这一帧 scan 不会进入后续管线
 - 如果上游 frame 命名和预期不一致，会造成间歇性地图/障碍缺失
 
-### 4.4 局部规划层：`local_planner.launch` 从硬编码改为可注入参数
+### 5.4 局部规划层：`local_planner.launch` 从硬编码改为可注入参数
 
 修改文件：
 
@@ -202,7 +484,7 @@
 - 当前代码试图把它调成更适配 Scout Mini 的系统
 - 这会直接影响轨迹裁剪、碰撞检测和速度控制
 
-### 4.5 局部规划算法主体：`localPlanner.cpp`
+### 5.5 局部规划算法主体：`localPlanner.cpp`
 
 修改文件：
 
@@ -261,7 +543,7 @@
 - 还是收到了 goal 但 pathFound=0
 - 还是 pathFound=1 但 controller 没跟上
 
-### 4.6 控制器：`pathFollower.cpp`
+### 5.6 控制器：`pathFollower.cpp`
 
 修改文件：
 
@@ -358,7 +640,7 @@
 
 这部分不一定引入 bug，但大大提高了 debug 能力。
 
-### 4.7 地形模块：仅做了参数级校准
+### 5.7 地形模块：仅做了参数级校准
 
 修改文件：
 
@@ -383,7 +665,7 @@
 - 局部规划认为能不能过
 - FAR 认为 goal 周围是不是 free terrain
 
-### 4.8 RViz 和 Goal/Waypoint 工具
+### 5.8 RViz 和 Goal/Waypoint 工具
 
 修改文件：
 
@@ -412,7 +694,7 @@
 
 不过从当前系统看，主要导航还是 2D/近平面思路，这一改动更像 UI/操作层修正，而不是核心 bug 源。
 
-### 4.9 CMake / 安装层
+### 5.9 CMake / 安装层
 
 修改文件：
 
@@ -429,7 +711,7 @@
 `pathFollower` 已直接发布 `/cmd_vel (Twist)`，只额外保留 `/cmd_vel_stamped`
 给仿真和调试使用。
 
-### 4.10 文档与运行辅助
+### 5.10 文档与运行辅助
 
 新增文件：
 
@@ -454,11 +736,11 @@
 
 这些改动本身不会改变运行行为，但提供了大量先验信息。
 
-## 5. 哪些改动最可能引入实机问题
+## 6. 哪些改动最可能引入实机问题
 
 如果想从“是不是你后续修改引入了错误”这个角度看，我建议优先盯下面 6 项。
 
-### 5.1 `odom_frame_relay.py`
+### 6.1 `odom_frame_relay.py`
 
 风险点：
 
@@ -471,7 +753,7 @@
 - 小车喜欢左右转圈
 - RViz 里朝向和真实前进方向不一致
 
-### 5.2 `registeredScanFrameRelay.cpp` + `sensorScanGeneration.cpp`
+### 6.2 `registeredScanFrameRelay.cpp` + `sensorScanGeneration.cpp`
 
 风险点：
 
@@ -484,15 +766,15 @@
 - 规划器看到的障碍侧别颠倒
 - FAR / local planner 偶发性“认为前方不通”
 
-### 5.3 `pathFollower.cpp` 中这段 path update 逻辑的历史背景
+### 6.3 `pathFollower.cpp` 中这段 path update 逻辑的历史背景
 
 补充说明：
 
 - 这段逻辑曾在 `03bb5e0` 引入
 - 当前工作树已经手工回退，不再保留相关参数和分支
-- 如果你和老师要复盘“是不是我某次改动引入过问题”，这仍然是一个值得讨论的历史点
+- 如果你要复盘“是不是我某次改动引入过问题”，这仍然是一个值得讨论的历史点
 
-### 5.4 `standard.yaml` 的控制增益改动
+### 6.4 `standard.yaml` 的控制增益改动
 
 风险点：
 
@@ -504,7 +786,7 @@
 - 跟踪保守
 - 目标侧向误差较大时反应迟钝
 
-### 5.5 `system_scout_hesai.launch.py` 中对 `twoWayDrive=false` 和车体尺寸的设定
+### 6.5 `system_scout_hesai.launch.py` 中对 `twoWayDrive=false` 和车体尺寸的设定
 
 风险点：
 
@@ -516,7 +798,7 @@
 - 目标一旦落在车后方，planner/controller 策略很僵
 - 可通行区域被判得过窄或过宽
 
-### 5.6 Goal/Waypoint z 固定为 0
+### 6.6 Goal/Waypoint z 固定为 0
 
 风险点：
 
@@ -526,9 +808,9 @@
 
 - 点了一个看起来可达的位置，planner 内部却不认为 goal 合理
 
-## 6. 文件清单
+## 7. 文件清单
 
-### 6.1 新增文件
+### 7.1 新增文件
 
 | 状态 | 文件 | 说明 |
 |---|---|---|
@@ -544,7 +826,7 @@
 | A | `src/base_autonomy/vehicle_simulator/scripts/odom_frame_relay.py` | 里程计坐标系修正 |
 | A | `src/base_autonomy/vehicle_simulator/src/registeredScanFrameRelay.cpp` | 配准点云 frame 修正 |
 
-### 6.2 修改文件
+### 7.2 修改文件
 
 | 状态 | 文件 | 说明 |
 |---|---|---|
@@ -562,7 +844,7 @@
 | M | `src/utilities/goalpoint_rviz_plugin/src/goalpoint_tool.cpp` | goal z 改为固定 0 |
 | M | `src/utilities/waypoint_rviz_plugin/src/waypoint_tool.cpp` | waypoint z 改为固定 0 |
 
-## 7. 建议你怎么用这份对比
+## 8. 建议你怎么用这份文档
 
 建议按下面顺序讨论：
 
@@ -579,7 +861,7 @@
 
 如果目标是尽快判断“是否是后续适配改动引入的问题”，最有效的方式不是从头通读，而是优先看这些相对基线新增的行为层。
 
-## 8. 一句话结论
+## 9. 一句话结论
 
 相对原始基线，当前代码的核心变化不是“某个小 bug 修补”，而是新增了一整层面向 Scout Mini + Hesai + D455 + FAST-LIO 的系统适配层。  
-因此，实机出现的转圈、Goalpoint 不生效、规划异常，完全有可能来自这些适配改动中的 frame、TF、话题接口或路径更新逻辑，而不一定是原始仓库本身的问题。
+因此，实机出现的转圈、Goalpoint 不生效、规划异常，完全有可能来自这些适配改动中的 frame、TF、话题接口、参数设定或地形表达，而不一定是原始仓库本身的问题。

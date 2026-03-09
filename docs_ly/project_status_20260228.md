@@ -1,4 +1,4 @@
-# 项目状态汇总（供老师/其他 AI 审阅）
+# 项目状态汇总（供协作审阅）
 
 更新时间：2026-02-28  
 项目目录：`/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform`
@@ -179,7 +179,7 @@
 2. 低速实车闭环验证（先走直线，再走圆弧）
 3. 第一次 waypoint 导航验证
 
-## 8. 请老师/其他 AI 重点帮看
+## 8. 建议重点帮看
 
 1. D455 IMU 作为主 IMU 的长期可行性与风险
 2. LiDAR 与 RealSense IMU 的时间同步方案是否足够稳健
@@ -574,7 +574,6 @@ source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platf
 ```
 
 > 顺序很重要：先 ROS2，再 fastlio_ws（提供 fast_lio 包），再 autonomy_stack（提供导航模块）。
-
 
 
 
