@@ -3,8 +3,9 @@
 > 这份文档记录的是 2026-02-28 的阶段性状态，主要用于保留当时的背景、决策和排查过程。  
 > 如果你要按当前代码实际运行，请优先阅读：
 > 1. `docs_ly/run_guide.md`
-> 2. `docs_ly/current_status_20260309.md`
+> 2. `docs_ly/current_status_20260311.md`
 > 3. `docs_ly/navigation_debug_spin_issue_20260309.md`
+> 4. `docs_ly/tare_integration_plan.md`
 
 更新时间：2026-02-28  
 项目目录：`/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform`
@@ -580,7 +581,6 @@ source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platf
 ```
 
 > 顺序很重要：先 ROS2，再 fastlio_ws（提供 fast_lio 包），再 autonomy_stack（提供导航模块）。
-
 
 
 

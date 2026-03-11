@@ -3,8 +3,9 @@
 > 这份文档是 2026-02-28 的路线和背景记录，不应直接当作当前运行事实。  
 > 如果你要先建立当前上下文，请优先阅读：
 > 1. `docs_ly/run_guide.md`
-> 2. `docs_ly/current_status_20260309.md`
+> 2. `docs_ly/current_status_20260311.md`
 > 3. `docs_ly/navigation_debug_spin_issue_20260309.md`
+> 4. `docs_ly/tare_integration_plan.md`
 
 > 本文档是对当前项目状态的完整梳理，适合在每次新 session 开始前阅读，以快速建立上下文。
 

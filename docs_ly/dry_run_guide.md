@@ -7,7 +7,8 @@
 请优先阅读：
 
 1. `docs_ly/run_guide.md`
-2. `docs_ly/current_status_20260309.md`
+2. `docs_ly/current_status_20260311.md`
 3. `docs_ly/navigation_debug_spin_issue_20260309.md`
+4. `docs_ly/tare_integration_plan.md`
 
 这样保留本文件，是为了兼容近期讨论中一直使用的文件名，避免继续出现“IDE 里打开的是 dry_run_guide，磁盘上实际主文档是 run_guide”这种混乱。

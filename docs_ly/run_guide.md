@@ -1,49 +1,37 @@
-# 当前运行指南（2026-03-09）
+# 当前运行指南（2026-03-11）
 
 > 这份文档是当前代码状态下的主运行指南。  
-> 如果与 `project_status_20260228.md` 或 `strategy_overview_20260228.md` 有冲突，以本文和代码为准。
+> 如果与 `project_status_20260228.md`、`strategy_overview_20260228.md` 或更早讨论记录冲突，以本文和代码为准。
 
 ## 1. 适用范围
 
-当前这份指南覆盖两种最常用场景：
-
-1. 干跑：传感器实时采集，不接底盘，只观察 RViz 和 `/cmd_vel`
-2. 实机联调：在干跑确认无明显问题后，再接 Scout Mini 底盘
-
-当前主入口有两个：
+当前主流程已经可以正常启动并运行，最常用的是两种模式：
 
 1. `system_scout_hesai.launch.py`
    只跑 Base Autonomy，适合近距离 waypoint 调试
 2. `system_scout_hesai_with_far_planner.launch.py`
-   在上面基础上再接 `far_planner`，适合较远目标点和全局路径可视化
+   在上面基础上接 `far_planner`，适合较远目标点和全局路径可视化
 
 ## 2. 当前代码状态摘要
 
-当前代码和文档最重要的事实是：
+截至 2026-03-11，当前代码有几个必须知道的事实：
 
-1. FAST-LIO2 已经直接集成到主 launch 中
-2. FAST-LIO2 的输出先进入
-   `/state_estimation_raw` 和 `/registered_scan_raw`
-3. 然后经
-   `odom_frame_relay.py` 和 `registeredScanFrameRelay`
-   统一到导航栈使用的 `/state_estimation` 和 `/registered_scan`
-4. `pathFollower` 现在直接发布 `geometry_msgs/Twist` 到 `/cmd_vel`
-5. 仍保留 `/cmd_vel_stamped`，但主要供仿真/调试链路使用
-6. 主 launch 默认开启调试日志，按运行时间写到
-   `runtime_logs/navigation_debug/<时间戳>/`
-7. RViz 里已经能直接看 far planner 的
-   `goal / waypoint / global path / VGraph`
+1. FAST-LIO2 已直接接入主 launch
+2. FAST-LIO2 输出会先进入 `/state_estimation_raw` 和 `/registered_scan_raw`
+3. 然后经 `odom_frame_relay.py` 和 `registeredScanFrameRelay` 统一到 `/state_estimation` 和 `/registered_scan`
+4. FAST-LIO2 自己的历史轨迹已隔离到 `/fastlio_path`，不再让 `pathFollower` 误订阅
+5. `pathFollower` 当前直接发布 `geometry_msgs/Twist` 到 `/cmd_vel`
+6. 主 launch 默认开启调试日志，写到 `runtime_logs/navigation_debug/<时间戳>/`
+7. RViz 里可以直接看 `goal / waypoint / free_goal / global path / VGraph / free_paths / terrain_map`
 
 ## 3. 运行前先知道的事
 
 ### 3.1 干跑时不需要底盘
 
-如果只是验证导航和控制输出是否合理，跑到观察 `/cmd_vel` 这一步就够了。  
-`scout_base` 和 CAN 并不是干跑前置条件。
+如果只是验证导航链路和控制输出，跑到观察 `/cmd_vel` 这一步就够了。  
+`scout_base`、CAN 和底盘上电都不是干跑前置条件。
 
-### 3.2 实机前先 source 的工作区
-
-主导航终端通常至少需要：
+### 3.2 主导航终端需要 source 的环境
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -51,18 +39,59 @@ source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
 ```
 
-如果你刚重新编译过当前工作区，最好重新开一个终端再 source 一次，避免仍停留在旧环境。
+如果你刚重新编译过当前工作区，最好新开终端再 source 一次，避免仍停留在旧环境。
 
-### 3.3 当前已知问题
+### 3.3 当前建议先确认 `/path` 的归属
 
-当前虽然主流程已经跑通，但仍有一个重要已知问题正在定位中：
+当前运行前，建议先确认 `/path` 只由 `localPlanner` 发布：
 
-1. 在 `twoWayDrive=false` 的 Scout 模式下，`localPlanner` 偶尔会产出后向局部路径
-2. 外在表现是小车会左右旋转，或者长时间原地调头
-3. 对应分析见
-   `docs_ly/navigation_debug_spin_issue_20260309.md`
+```bash
+ros2 topic info /path --verbose
+ros2 topic info /fastlio_path --verbose
+```
 
-这不影响干跑流程本身，但会影响“能否稳定到达目标点”的体验。
+正确结果应该是：
+
+1. `/path`：只剩 `localPlanner` 一个 publisher
+2. `/fastlio_path`：由 `fastlio_mapping` 发布
+
+如果 `/path` 里仍能看到 `fastlio_mapping`，说明你跑到的不是当前安装版本，需要重新编译并重新 source。
+
+### 3.4 当前最重要的已知问题
+
+当前主链已经能跑，但还有两个现实问题需要带着预期去看：
+
+**问题 1：近目标时仍可能反复转向**
+
+1. `global path` 和大段行进通常已经正常
+2. 但接近目标后，`localPlanner` 仍可能重新发布多点路径
+3. `pathFollower` 每次收到新 `/path` 都会重新按当前路径转向
+4. 所以会出现“明明已经很接近目标，但还在反复转”的现象
+
+这不是启动失败问题，而是当前最主要的控制收敛问题。
+
+**问题 2：探索模块 TARE 还没有接入当前主 launch**
+
+1. 仓库中已有 `tare_planner`
+2. 但当前默认运行入口仍是 Base Autonomy 或 FAR
+3. 若要测试 TARE，需要单独做接入和验证
+
+对应分析见：
+
+1. `docs_ly/current_status_20260311.md`
+2. `docs_ly/navigation_debug_spin_issue_20260309.md`
+3. `docs_ly/tare_integration_plan.md`
+
+### 3.5 如果你改了 launch 文件，记得重新编译
+
+Python launch 文件是从 `install/` 目录运行的。  
+如果你改了 `src/` 下的 launch 文件，需要重新编译：
+
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform
+colcon build --packages-select vehicle_simulator
+source install/setup.bash
+```
 
 ## 4. 干跑步骤（实时传感器）
 
@@ -72,17 +101,13 @@ source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platf
 sudo ptp4l -f /etc/linuxptp/ptp4l-xt32.conf -i eno1 -m
 ```
 
-等 `rms` 稳定后再继续。
-
 ### 终端 B：同步系统时钟
 
 ```bash
 sudo phc2sys -s /dev/ptp0 -c CLOCK_REALTIME -O 0 -m
 ```
 
-等 `offset` 收敛后再继续。
-
-这两步的目的只有一个：让 Hesai 时间戳、系统时钟和 RealSense IMU 时间戳尽量同源，保证 FAST-LIO2 能稳定融合。
+这两步的目的只有一个：尽量让 Hesai、系统时钟和 RealSense IMU 时间戳同源，保证 FAST-LIO2 稳定融合。
 
 ### 终端 C：Hesai 驱动
 
@@ -98,7 +123,7 @@ source /opt/ros/humble/setup.bash
 ros2 topic hz /lidar_points
 ```
 
-期望大约 `10 Hz`。
+期望约 `10 Hz`。
 
 ### 终端 D：RealSense 驱动
 
@@ -110,11 +135,6 @@ ros2 launch realsense2_camera rs_launch.py \
   enable_accel:=true
 ```
 
-注意：
-
-1. `unite_imu_method:=1` 是必须的，否则不会稳定发布 `/camera/imu`
-2. 不建议额外打开 `global_time_enabled:=true`，以免破坏当前时间同步链路
-
 可选检查：
 
 ```bash
@@ -122,7 +142,7 @@ source /opt/ros/humble/setup.bash
 ros2 topic hz /camera/imu
 ```
 
-期望大约 `200 Hz`。
+期望约 `200 Hz`。
 
 ### 终端 E：主导航栈
 
@@ -144,8 +164,6 @@ source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platf
 ros2 launch vehicle_simulator system_scout_hesai_with_far_planner.launch.py
 ```
 
-当前默认会同时启动 RViz，并在终端打印本次调试日志目录。
-
 ### 终端 F：观察速度命令
 
 ```bash
@@ -160,9 +178,9 @@ ros2 topic echo /cmd_vel
 ### 5.1 Base Autonomy 模式
 
 请使用 **Waypoint** 工具。  
-它会直接往 `/way_point` 发目标点，绕过 `far_planner`，更适合近距离局部调试。
+它直接往 `/way_point` 发目标点，绕过 `far_planner`，适合近距离局部调试。
 
-当前你能看到的主要东西：
+当前常看的显示项：
 
 1. `/registered_scan`
 2. `/terrain_map`
@@ -175,110 +193,64 @@ ros2 topic echo /cmd_vel
 请使用 **Goalpoint** 工具。  
 不要再用 Waypoint，因为那会绕过 `far_planner`。
 
-当前你能在 RViz 里直接看到：
+当前 RViz 里常见的含义是：
 
 1. 红球：`original_goal`
 2. 紫球：`waypoint`
 3. 绿球：`free_goal`
 4. 蓝色线：`global path`
-5. `VGraph`
+5. 红线：`polygon_edge`
+6. 蓝绿色线：`freespace_vgraph`
 
-当前 `VGraph` 里最常见的两类线：
+如果只看到红球，看不到绿球，最常见原因是：
 
-1. 红线：`polygon_edge`
-   障碍物轮廓边
-2. 蓝绿色线：`freespace_vgraph`
-   far planner 内部的自由空间图连接边
+1. `free_goal` 和 `original_goal` 重合
+2. 或者规划没有成功，`free_goal` 根本没单独偏移出来
 
-它们是调试可视化，不是底盘直接跟踪的轨迹。
+## 6. `/cmd_vel` 怎样算大致正常
 
-## 6. `/cmd_vel` 怎么判断是否大致正常
+当前 Scout 入口默认大致范围是：
 
-当前 Scout 入口默认：
+1. `linear.x: 0.0 ~ 0.5`
+2. `linear.y: 0.0`
+3. `angular.z: -1.047 ~ 1.047`
 
-1. `maxSpeed = 0.5 m/s`
-2. `cmd_y = 0`
-3. `maxYawRate = 60 deg/s ≈ 1.047 rad/s`
+判断方式：
 
-所以常见合理范围是：
-
-```text
-linear.x:   0.0 ~ 0.5
-linear.y:   0.0
-angular.z: -1.047 ~ 1.047
-```
-
-如果你看到：
-
-1. `cmd_x` 能稳定起来，而 `cmd_yaw` 逐渐变小
-   说明局部路径和控制器基本一致
-2. `cmd_x` 长时间为 `0`，`cmd_yaw` 长时间打满
-   更像是 planner 给了一条后向或强侧向的局部路径
-
-这时应优先去看日志，而不是先怀疑底盘。
+1. `cmd_x` 能起来、`cmd_yaw` 逐渐减小：通常是正常靠近目标
+2. `cmd_x` 长时间很小、`cmd_yaw` 长时间打满：更像是在不断重对齐局部路径
 
 ## 7. 本次运行后的日志在哪里
 
-当前主 launch 默认会把日志写到：
+主 launch 默认把日志写到：
 
 ```text
 runtime_logs/navigation_debug/<时间戳>/
 ```
 
-通常包含两个文件：
+通常包含：
 
 1. `local_planner.csv`
 2. `path_follower.csv`
 
-用途分别是：
+当前最值得看的字段：
 
-1. `local_planner.csv`
-   看目标相对方向、选中的路径组、`selected_rot_deg`、左右障碍统计
-2. `path_follower.csv`
-   看跟踪目标点、`dir_diff`、速度命令、路径更新模式
+1. `goal_rel_x`, `goal_rel_y`
+2. `goal_rel_dis`
+3. `selected_group_raw`, `selected_rot_deg`
+4. `path_points`, `path_published`
+5. `target_x`, `target_y`
+6. `dir_diff`
+7. `cmd_x`, `cmd_yaw`
 
-更详细的调试思路见：
-
-1. `docs_ly/navigation_debug_spin_issue_20260309.md`
-2. `docs_ly/current_status_20260309.md`
-
-## 8. 干跑后该看什么
-
-### 8.1 如果只是确认“系统通了没”
-
-重点看：
-
-1. FAST-LIO2 是否正常出图
-2. `/terrain_map` 是否有数据
-3. `/free_paths` 是否出现
-4. 点击目标点后 `/cmd_vel` 是否有合理变化
-
-### 8.2 如果是确认“为什么它在乱转”
-
-重点看：
-
-1. `runtime_logs/navigation_debug/<时间戳>/local_planner.csv`
-2. `runtime_logs/navigation_debug/<时间戳>/path_follower.csv`
-
-尤其关注这些字段：
-
-1. `selected_rot_deg`
-2. `freeze_status`
-3. `goal_rel_x`, `goal_rel_y`
-4. `target_x`, `target_y`
-5. `dir_diff`
-6. `cmd_x`, `cmd_yaw`
-
-## 9. 实机联调（可选，不属于干跑前置）
+## 8. 实机联调（可选，不属于干跑前置）
 
 如果干跑阶段已经确认：
 
-1. RViz 与点云显示正常
-2. `/cmd_vel` 的方向和量级没有明显离谱
+1. RViz 和点云显示正常
+2. `/cmd_vel` 方向与量级没有明显离谱
 
 再进入实机阶段。
-
-### CAN 与 Scout 驱动
 
 ```bash
 sudo modprobe gs_usb
@@ -286,18 +258,16 @@ sudo ip link set can2 up type can bitrate 500000
 ros2 launch scout_base scout_mini_base.launch.py port_name:=can2
 ```
 
-这一步不是干跑的一部分，而是“准备真正让底盘动”时才需要。
+## 9. 推荐一起看的文档
 
-## 10. 推荐一起看的文档
+建议按这个顺序建立当前上下文：
 
-如果你后面准备系统读代码，推荐顺序：
+1. `docs_ly/run_guide.md`
+2. `docs_ly/current_status_20260311.md`
+3. `docs_ly/navigation_debug_spin_issue_20260309.md`
+4. `docs_ly/tare_integration_plan.md`
+5. `docs_ly/project_status_20260228.md`
+6. `docs_ly/strategy_overview_20260228.md`
 
-1. `docs_ly/current_status_20260309.md`
-2. `docs_ly/navigation_debug_spin_issue_20260309.md`
-3. `docs_ly/project_status_20260228.md`
-4. `docs_ly/strategy_overview_20260228.md`
-
-其中：
-
-1. 前两份是当前状态和当前问题
-2. 后两份更像 2 月底阶段性记录，保留了很多背景，但已有部分内容过时
+前三份是当前事实和当前问题。  
+后两份主要保留背景和路线，不应直接当作当前运行事实。

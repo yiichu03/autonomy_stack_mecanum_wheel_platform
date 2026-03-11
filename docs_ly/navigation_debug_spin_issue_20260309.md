@@ -1,6 +1,6 @@
 # 导航乱转与目标不可达问题调试记录
 
-更新时间：2026-03-09  
+更新时间：2026-03-10（在 2026-03-09 基础上追加 Ghost Path 根因发现与近目标点障碍分析）
 项目目录：`/home/rho/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform`
 
 ## 1. 这份文档的目的
@@ -397,3 +397,111 @@ RViz Goalpoint
 1. `localPlanner.cpp`
 2. `pathFollower.cpp`
 3. `system_scout_hesai_with_far_planner.launch.py`
+
+---
+
+## 13. 新发现（2026-03-10）：鬼路径根因（Ghost Path）
+
+### 13.1 发现过程
+
+通过 `ros2 topic info /path --verbose` 发现 `/path` 话题存在**两个发布者**：
+
+1. `localPlanner` — 发布当前局部规划路径（正常）
+2. `fastlio_mapping` — 发布 FAST-LIO2 内部的里程计历史轨迹（异常干扰）
+
+`fastlio_mapping` 的这条历史轨迹（走过的所有坐标点，随时间不断增长）被 `pathFollower` 当作导航指令接收，造成：
+
+- `pathFollower` 把"车辆走过的历史位置"当作目标点，让车驶向身后约 1.5 m 处
+- 这条"鬼路径"每隔约 1.7 秒发布一次（FAST-LIO2 的 map 发布频率）
+- 每次鬼路径到来，`pathFollower` 会**重置跟踪状态**，即使正常路径已经让车靠近目标，也会被打断
+
+### 13.2 日志特征
+
+在 `path_follower.csv` 中，鬼路径可以通过以下特征识别：
+
+| 特征 | 说明 |
+|------|------|
+| `path_size` 单调递增 | 例：15→16→17→...（每次 +1，对应历史轨迹每帧增加一个点） |
+| `target_x` 为负值且绝对值较大 | 目标点在车后方 1～2 m 处 |
+| `dir_diff ≈ ±π` | 控制器发现目标在正后方，拼命转向 |
+| `cmd_x ≈ -0.5`（倒退） | 控制器对鬼路径的响应会让车后退 |
+
+### 13.3 已实施的修复
+
+在 `system_scout_hesai.launch.py`（以及 with_far_planner 版本）的 `fastlio_mapping` 节点 remappings 中增加：
+
+```python
+('/path', '/fastlio_path'),
+```
+
+将 FAST-LIO2 历史轨迹隔离到独立话题，`pathFollower` 不再收到鬼路径。
+
+### 13.4 重要：修复必须重新编译才能生效
+
+Python launch 文件从 `install/` 目录运行，修改 `src/` 后必须：
+
+```bash
+colcon build --packages-select vehicle_simulator
+source install/setup.bash
+```
+
+然后重新启动导航栈，否则修改**不生效**。
+
+---
+
+## 14. 新发现（2026-03-10）：近目标点无法停止
+
+### 14.1 现象
+
+运行日志 `20260310_001104` 分析：
+
+- 车辆距离目标点约 **0.13 ～ 0.20 m** 时，不再前进
+- `freeze_status` 始终为 `0`，不触发停止
+- `path_points` 维持最小值（15～21），不降至 1
+
+### 14.2 根因：目标点被障碍区阻断
+
+`local_planner.csv` 显示：
+
+```
+obstacle_right_points = planner_right_points （右侧路径组全部被标记为障碍）
+joy_dir = -10° 到 -70°           （目标偏右前方）
+selected_rot_deg = 0° 到 -10°    （规划器无法朝目标右转）
+```
+
+即：`terrain_analysis` 将目标点附近的地面标记为障碍，右侧路径组完全不可用。
+规划器无法将路径延伸至目标点，`goal_rel_dis` 永远不会趋近于 0，所以 `freeze_status=1` 的条件从未满足。
+
+### 14.3 freeze_status 触发机制说明
+
+`freeze_status=1` 的触发条件是 `localPlanner` 的规划路径终点到达 goal（`goal_rel_dis → 0`）。这**不是基于距离阈值**，而是规划层的判断。如果目标区域被障碍阻断，localPlanner 无法把路径终点推到 goal 位置，所以 freeze_status 永远不会触发。
+
+`stopDisThre` 参数只影响 `pathFollower`（当 `dis < stopDisThre` 时停止发速度），与 `freeze_status` 逻辑无关。
+
+### 14.4 far_planner 只显示红球的关联
+
+只显示**红球**（`original_goal`）而没有**绿球**（`free_goal`）说明：
+
+- `far_planner` 认为 goal 点不可达（在障碍区内或无法找到无障碍邻近点）
+- `PathToGoal()` 规划失败，绿球不会被发布
+- 与 localPlanner 无法到达 goal 的根因相同
+
+### 14.5 建议排查步骤
+
+1. 在 RViz 中打开 `/terrain_map` 话题
+2. 将目标点附近的地图放大
+3. 检查该区域点云颜色（绿色=可通行，红/黄色=障碍）
+4. 若存在误检测，考虑调整：
+   - `terrain_analysis` 的高度差阈值参数
+   - 目标点位置（略微移动，避开障碍标记区域）
+
+---
+
+## 15. 当前问题优先级更新
+
+| 优先级 | 问题 | 最新状态 |
+|--------|------|---------|
+| P0 | 鬼路径：fastlio_mapping `/path` 干扰 pathFollower | **已修复代码，待重编译验证** |
+| P1 | 近目标点无法停止（障碍误检测阻断最后 0.13 m） | 待 RViz 排查 terrain_map |
+| P2 | far_planner 绿球从不出现 | 与 P1 同根因 |
+| P3 | twoWayDrive=false 的后向路径逻辑 | 在鬼路径消除前无法干净验证 |
