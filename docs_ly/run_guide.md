@@ -70,11 +70,12 @@ ros2 topic info /fastlio_path --verbose
 
 这不是启动失败问题，而是当前最主要的控制收敛问题。
 
-**问题 2：探索模块 TARE 还没有接入当前主 launch**
+**关于探索模块 TARE：已接入，可直接使用**
 
-1. 仓库中已有 `tare_planner`
-2. 但当前默认运行入口仍是 Base Autonomy 或 FAR
-3. 若要测试 TARE，需要单独做接入和验证
+1. `tare_planner` 已完成 ARM64 编译（OR-Tools 库已从 x86-64 替换为 aarch64）
+2. 新增 `system_scout_hesai_with_tare.launch.py` 入口（见第 4 节方案三）
+3. 与 `far_planner` 模式互斥，通过不同 launch 文件切换
+4. 编译和接入过程详见 `docs_ly/current_status_20260311.md` 第 4 节
 
 对应分析见：
 
@@ -155,7 +156,7 @@ source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platf
 ros2 launch vehicle_simulator system_scout_hesai.launch.py
 ```
 
-#### 方案二：接 far_planner
+#### 方案二：接 far_planner（人工指定目标点）
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -163,6 +164,33 @@ source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
 ros2 launch vehicle_simulator system_scout_hesai_with_far_planner.launch.py
 ```
+
+#### 方案三：接 TARE（自主探索，无需指定目标点）
+
+启动后机器人自动开始探索，无需在 RViz 中点击目标。
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py
+```
+
+验证 TARE 是否正常出探索目标点：
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+ros2 node list | grep tare
+ros2 topic echo /way_point
+
+source /opt/ros/humble/setup.bash
+ros2 topic echo /way_point
+```
+
+启动后数秒内应看到 `/way_point` 持续更新。若无输出，检查 `tare_planner_node` 终端日志。
+
+> 注意：方案二和方案三互斥，两者都会发布 `/way_point`，不能同时运行。
 
 ### 终端 F：观察速度命令
 
@@ -256,6 +284,10 @@ runtime_logs/navigation_debug/<时间戳>/
 sudo modprobe gs_usb
 sudo ip link set can2 up type can bitrate 500000
 ros2 launch scout_base scout_mini_base.launch.py port_name:=can2
+
+sudo ip link set can2 up type can bitrate 500000
+ros2 launch scout_base scout_mini_base.launch.py port_name:=can0
+
 ```
 
 ## 9. 推荐一起看的文档

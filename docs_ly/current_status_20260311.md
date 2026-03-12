@@ -96,29 +96,83 @@ ros2 topic info /fastlio_path --verbose
 1. `/path` 冲突已经是已修正的旧问题
 2. 当前剩余主问题是近目标阶段的 planner/follower 收敛不稳定
 
-## 4. 关于探索模块（TARE）的当前判断
+## 4. 探索模块 TARE 已经接入（2026-03-11）
 
-当前仓库里确实已经包含探索模块：
+### 4.1 完成内容
 
-```text
-src/exploration_planner/tare_planner/
+截至 2026-03-11，TARE 探索规划器已经完成接入，可以直接使用：
+
+1. OR-Tools ARM64 库已替换（见 4.2 节）
+2. `tare_planner` 已编译成功（仅 warnings，无 errors）
+3. 新 launch 文件已创建并安装：`system_scout_hesai_with_tare.launch.py`
+
+### 4.2 OR-Tools ARM64 替换过程
+
+仓库原自带的 `libortools.so.9.8.3296` 是 x86-64 架构，无法在 Jetson AGX Orin（aarch64）上运行。
+
+**解决方案：** 下载 `or-tools_arm64_debian-11_cpp_v9.8.3296.tar.gz`（与仓库自带版本号完全一致，确保 API 兼容），解压后替换 `.so` 文件。
+
+操作记录（已完成，无需再做）：
+
+```bash
+# 解压
+tar -xzf docs_ly/or-tools_arm64_debian-11_cpp_v9.8.3296.tar.gz -C /tmp/
+
+# 替换 .so 文件（在 autonomy_stack 根目录下）
+cp /tmp/or-tools_aarch64_Debian-11_cpp_v9.8.3296/lib/libortools.so.9.8.3296 \
+   src/exploration_planner/tare_planner/or-tools/lib/libortools.so.9.8.3296
+
+# 更新 symlinks
+cd src/exploration_planner/tare_planner/or-tools/lib/
+ln -sf libortools.so.9.8.3296 libortools.so.9
+ln -sf libortools.so.9 libortools.so
 ```
 
-而且从接口上看，它与当前链路是兼容的：
+替换后用 `file` 命令验证架构：
 
-1. 订阅 `/terrain_map`
-2. 订阅 `/terrain_map_ext`
-3. 订阅 `/state_estimation_at_scan`
-4. 订阅 `/registered_scan`
-5. 发布 `/way_point`
+```bash
+file src/exploration_planner/tare_planner/or-tools/lib/libortools.so.9.8.3296
+# 期望输出：ELF 64-bit LSB shared object, ARM aarch64, ...
+```
 
-所以结论是：
+备注：两个下载包 `or-tools_arm64_debian-11_cpp_v9.8.3296.tar.gz` 和 `or-tools_arm64_debian-11_cpp_v9.12.4544.tar.gz` 均存放在 `docs_ly/` 目录中。使用 v9.8.3296 版本（与仓库头文件版本完全对应），**不要用 v9.12**（版本不匹配会有 API 不兼容风险）。
 
-1. **可以考虑重新接入**
-2. 但不建议直接和当前 `far_planner` 混在同一个入口里试
-3. 应该做成与 FAR 互斥的单独探索模式
+### 4.3 tare_planner 编译
 
-详细分析见 `docs_ly/tare_integration_plan.md`。
+OR-Tools 替换完成后，直接编译：
+
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+colcon build --packages-select tare_planner
+```
+
+编译耗时约 5 分钟，有若干 sign-compare warnings，无 errors，属正常。
+
+### 4.4 新 launch 文件
+
+已创建：`src/base_autonomy/vehicle_simulator/launch/system_scout_hesai_with_tare.launch.py`
+
+主要特点：
+
+1. 去掉 `far_planner`，加入 `tare_planner_node`
+2. 使用 `indoor_small.yaml` 配置（安装后位于 `install/tare_planner/share/tare_planner/indoor_small.yaml`）
+3. `kAutoStart=true`：启动后自动开始探索
+4. `/way_point` 接口与 `localPlanner` 完全兼容
+
+与 `far_planner` 模式互斥，通过不同 launch 文件切换。详见 `docs_ly/run_guide.md` 第 4 节方案三。
+
+### 4.5 TARE 数据流
+
+```text
+/terrain_map + /terrain_map_ext + /state_estimation_at_scan + /registered_scan
+  -> tare_planner_node
+  -> /way_point
+  -> localPlanner → /path → pathFollower → /cmd_vel
+```
+
+详细分析和使用建议见 `docs_ly/tare_integration_plan.md`。
 
 ## 5. 当前最建议的文档阅读顺序
 

@@ -72,15 +72,16 @@ tare_planner_node:
     keypose_graph/kAddEdgeCollisionCheckPointNumThr : 1
 
     # ViewPointManager
-    viewpoint_manager/number_x : 45
-    viewpoint_manager/number_y : 45
+    # 原始 45×45=2025 viewpoints 在 Jetson ARM64 上每次规划约 75s，缩小到 20×20=400 可约 5-10s
+    viewpoint_manager/number_x : 20
+    viewpoint_manager/number_y : 20
     viewpoint_manager/number_z : 1
-    viewpoint_manager/resolution_x : 0.2
-    viewpoint_manager/resolution_y : 0.2
+    viewpoint_manager/resolution_x : 0.3
+    viewpoint_manager/resolution_y : 0.3
     viewpoint_manager/resolution_z : 0.0
     kConnectivityHeightDiffThr : 0.25
-    kGreedyViewPointSampleRange : 3
-    kLocalPathOptimizationItrMax : 10
+    kGreedyViewPointSampleRange : 2
+    kLocalPathOptimizationItrMax : 3
     kViewPointCollisionMargin : 0.35
     kViewPointCollisionMarginZPlus : 0.25
     kViewPointCollisionMarginZMinus : 0.25
