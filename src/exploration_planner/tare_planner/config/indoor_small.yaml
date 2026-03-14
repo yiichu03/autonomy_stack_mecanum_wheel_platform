@@ -76,12 +76,12 @@ tare_planner_node:
     viewpoint_manager/number_x : 20  # X 方向采样 20 列候选 viewpoint。值越大，搜索范围/密度越大，规划更细，但计算更慢。
     viewpoint_manager/number_y : 20  # Y 方向采样 20 行候选 viewpoint。和上面一起决定总候选数，这里就是 20 * 20 * 1 = 400 个候选点。
     viewpoint_manager/number_z : 1  # Z 方向只有 1 层。对当前地面机器人，这基本表示“只在一个高度层上规划”。代码里当前实现本身就是按二维处理的 dimension_=2 viewpoint_manager.cpp (line 45)，所以这里本质上是单层平面规划。
-    viewpoint_manager/resolution_x : 0.3
-    viewpoint_manager/resolution_y : 0.3
-    viewpoint_manager/resolution_z : 0.0
-    kConnectivityHeightDiffThr : 0.25
-    kGreedyViewPointSampleRange : 2
-    kLocalPathOptimizationItrMax : 3
+    viewpoint_manager/resolution_x : 0.3 # X 方向相邻两个 viewpoint 的间距是 0.3m。越小越密，越容易看清窄空间，但计算量会上去。当前 20 * 0.3 = 6m。
+    viewpoint_manager/resolution_y : 0.3 # Y 方向相邻 viewpoint 间距也是 0.3m。和上面一起形成大约 6m x 6m 的局部采样窗口。
+    viewpoint_manager/resolution_z : 0.0 # Z 方向层间距是 0.0m。因为 number_z=1，这里只有一层，这个值基本是占位，当前配置下几乎不起主要作用。
+    kConnectivityHeightDiffThr : 0.25 # 判断相邻 viewpoint 能不能连通时，两点高度差必须小于 0.25m 才算可连 viewpoint_manager.cpp (line 819)。调大后，TARE 会更愿意跨越高低起伏；调小后会更保守，避免把台阶、坎、坡面误当成可通行。
+    kGreedyViewPointSampleRange : 2 # TARE 选下一个 viewpoint 时，不是永远死选第一名，而是在“当前足够好的候选里”最多取前 2 个，再随机挑一个 local_coverage_planner.cpp (line 182)。值小更稳定、更确定；值大更不容易陷入特别贪心的局部选择，但路径会更随机。
+    kLocalPathOptimizationItrMax : 3 # 每轮局部规划最多做 3 次“选 viewpoint + 解一遍局部路径/TSP”，最后保留路径最短的结果 local_coverage_planner.cpp (line 643)。调大通常会更优，但明显更慢；调小更快，但更容易出现“能用但不够漂亮”的局部路径。
     kViewPointCollisionMargin : 0.35
     kViewPointCollisionMarginZPlus : 0.25
     kViewPointCollisionMarginZMinus : 0.25
