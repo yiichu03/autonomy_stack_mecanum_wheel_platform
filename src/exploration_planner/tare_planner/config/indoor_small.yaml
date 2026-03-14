@@ -73,9 +73,9 @@ tare_planner_node:
 
     # ViewPointManager
     # 原始 45×45=2025 viewpoints 在 Jetson ARM64 上每次规划约 75s，缩小到 20×20=400 可约 5-10s
-    viewpoint_manager/number_x : 20
-    viewpoint_manager/number_y : 20
-    viewpoint_manager/number_z : 1
+    viewpoint_manager/number_x : 20  # X 方向采样 20 列候选 viewpoint。值越大，搜索范围/密度越大，规划更细，但计算更慢。
+    viewpoint_manager/number_y : 20  # Y 方向采样 20 行候选 viewpoint。和上面一起决定总候选数，这里就是 20 * 20 * 1 = 400 个候选点。
+    viewpoint_manager/number_z : 1  # Z 方向只有 1 层。对当前地面机器人，这基本表示“只在一个高度层上规划”。代码里当前实现本身就是按二维处理的 dimension_=2 viewpoint_manager.cpp (line 45)，所以这里本质上是单层平面规划。
     viewpoint_manager/resolution_x : 0.3
     viewpoint_manager/resolution_y : 0.3
     viewpoint_manager/resolution_z : 0.0
