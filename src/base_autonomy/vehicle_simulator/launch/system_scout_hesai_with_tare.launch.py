@@ -56,7 +56,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, SetEnvironmentVariable
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, SetParameter
 
 
@@ -73,6 +73,7 @@ def generate_launch_description():
     vehicleY          = LaunchConfiguration('vehicleY')
     maxSpeed          = LaunchConfiguration('maxSpeed')
     checkTerrainConn  = LaunchConfiguration('checkTerrainConn')
+    tareConfig        = LaunchConfiguration('tareConfig')
     enableDebugLog    = LaunchConfiguration('enableDebugLog')
     debugLogDir       = LaunchConfiguration('debugLogDir')
     debugLogDecimation = LaunchConfiguration('debugLogDecimation')
@@ -103,6 +104,7 @@ def generate_launch_description():
     declare_vehicleY            = DeclareLaunchArgument('vehicleY',              default_value='0.0',   description='初始目标点 Y')
     declare_maxSpeed            = DeclareLaunchArgument('maxSpeed',              default_value='0.5',   description='最大速度 (m/s)')
     declare_checkTerrainConn    = DeclareLaunchArgument('checkTerrainConn',      default_value='true',  description='')
+    declare_tare_config         = DeclareLaunchArgument('tareConfig',            default_value='indoor_small.yaml', description='TARE 配置文件：indoor_small.yaml / indoor_large.yaml / outdoor.yaml')
     declare_enable_debug_log    = DeclareLaunchArgument('enableDebugLog',        default_value='true',  description='是否记录规划/控制调试 CSV 日志')
     declare_debug_log_dir       = DeclareLaunchArgument('debugLogDir',           default_value=default_debug_log_dir, description='规划/控制调试日志目录')
     declare_debug_log_decimation = DeclareLaunchArgument('debugLogDecimation',   default_value='10',    description='调试日志采样降频系数')
@@ -213,14 +215,14 @@ def generate_launch_description():
     #  发布：/way_point（localPlanner 订阅此话题，与 far_planner 相同接口）
     #
     #  kAutoStart=true：启动后立即开始探索
-    #  配置文件：install/tare_planner/share/tare_planner/indoor_small.yaml
+    #  配置文件：install/tare_planner/share/tare_planner/<tareConfig>
     # ------------------------------------------------------------------ #
     start_tare_planner = Node(
         package='tare_planner',
         executable='tare_planner_node',
         name='tare_planner_node',
         parameters=[
-            os.path.join(get_package_share_directory('tare_planner'), 'indoor_small.yaml'),
+            PathJoinSubstitution([get_package_share_directory('tare_planner'), tareConfig]),
             {'use_sim_time': use_sim_time},
             {'enableDebugLog': enableDebugLog},
             {'debugLogDir': debugLogDir},
@@ -283,6 +285,7 @@ def generate_launch_description():
     ld.add_action(declare_vehicleY)
     ld.add_action(declare_maxSpeed)
     ld.add_action(declare_checkTerrainConn)
+    ld.add_action(declare_tare_config)
     ld.add_action(declare_enable_debug_log)
     ld.add_action(declare_debug_log_dir)
     ld.add_action(declare_debug_log_decimation)

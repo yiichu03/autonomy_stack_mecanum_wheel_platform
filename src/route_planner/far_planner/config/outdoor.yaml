@@ -2,7 +2,8 @@ far_planner:
   ros__parameters:
     # Dynamic Planner Default Params
     main_run_freq: 5.0
-    voxel_dim: 0.15  # Unit: meter
+    # 膨胀是按“格子数”做的，所以实际米制距离大约是 obs_inflate_size * voxel_dim。如果 obs_inflate_size 不变，改 voxel_dim 也会改实际安全边距。
+    voxel_dim: 0.15  # Unit: meter 间接影响这个高度范围，因为 height_voxel_dim = 2 * voxel_dim；同时也影响地形高度连续性的判断阈值
     robot_dim: 0.8   # Unit: meter
     vehicle_height: 0.6  # Unit: meter
     sensor_range: 30.0  # Unit: meter
@@ -22,15 +23,15 @@ far_planner:
     graph_msger/robot_id: 1  # graph from robot id "0" is extracted from files
 
     # Map Handler Params
-    map_handler/floor_height: 2.5     # Unit: meter
-    map_handler/cell_length: 5.0     # Unit: meter
+    map_handler/floor_height: 2.5     # Unit: meter 最直接的“高度截取范围”参数。FAR 会先把地形点云按 kTolerZ 做 z 向裁剪，而 kTolerZ = floor_height - 2 * voxel_dim
+    map_handler/cell_length: 5.0     # Unit: meter 
     map_handler/map_grid_max_length: 1000.0   # Unit: meter
     map_handler/map_grad_max_height: 100.0   # Unit: meter
 
     # Dynamic Planner Utility Params
     util/angle_noise: 15.0 # Unit: degree
     util/accept_max_align_angle: 4.0  # Unit: degree
-    util/obs_inflate_size: 1
+    util/obs_inflate_size: 1   # 最直接的障碍膨胀参数。它直接参与 scan 栅格膨胀和 free terrain 栅格里的障碍扩张
     util/new_intensity_thred: 2.0
     util/terrain_free_Z: 0.2
     util/dyosb_update_thred: 4

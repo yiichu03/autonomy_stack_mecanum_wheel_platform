@@ -157,6 +157,7 @@ ros2 launch vehicle_simulator system_scout_hesai.launch.py
 ```
 
 #### 方案二：接 far_planner（人工指定目标点）
+默认是 outdoor.yaml
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -174,6 +175,11 @@ source /opt/ros/humble/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
 ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py
+
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=indoor_large.yaml
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=outdoor.yaml
+
+
 ```
 
 验证 TARE 是否正常出探索目标点：
@@ -282,6 +288,9 @@ runtime_logs/navigation_debug/<时间戳>/
 
 ```bash
 sudo modprobe gs_usb
+candump can0
+candump can2
+
 sudo ip link set can2 up type can bitrate 500000
 ros2 launch scout_base scout_mini_base.launch.py port_name:=can2
 

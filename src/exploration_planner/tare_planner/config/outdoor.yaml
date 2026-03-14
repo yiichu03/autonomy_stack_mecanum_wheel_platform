@@ -70,15 +70,15 @@ tare_planner_node:
     keypose_graph/kAddEdgeCollisionCheckPointNumThr : 1
 
     # ViewPointManager
-    viewpoint_manager/number_x : 45
-    viewpoint_manager/number_y : 45
+    viewpoint_manager/number_x : 20
+    viewpoint_manager/number_y : 20
     viewpoint_manager/number_z : 1
     viewpoint_manager/resolution_x : 0.55
     viewpoint_manager/resolution_y : 0.55
     viewpoint_manager/resolution_z : 0.0
     kConnectivityHeightDiffThr : 0.4
     kGreedyViewPointSampleRange : 3
-    kLocalPathOptimizationItrMax : 10
+    kLocalPathOptimizationItrMax : 3
     kViewPointCollisionMargin : 0.6
     kViewPointCollisionMarginZPlus : 0.5
     kViewPointCollisionMarginZMinus : 0.5
