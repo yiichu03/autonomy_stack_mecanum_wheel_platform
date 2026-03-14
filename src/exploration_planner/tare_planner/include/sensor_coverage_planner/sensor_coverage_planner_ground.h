@@ -11,6 +11,8 @@
 #pragma once
 
 #include <cmath>
+#include <fstream>
+#include <string>
 #include <vector>
 
 #include <Eigen/Core>
@@ -101,6 +103,7 @@ private:
   bool kUseLineOfSightLookAheadPoint;
   bool kNoExplorationReturnHome;
   bool kUseMomentum;
+  bool enable_debug_log_;
 
   // Double
   double kKeyposeCloudDwzFilterLeafSize;
@@ -110,11 +113,13 @@ private:
   double kLookAheadDistance;
   double kExtendWayPointDistanceBig;
   double kExtendWayPointDistanceSmall;
+  std::string debug_log_dir_;
 
   // Int
   int kDirectionChangeCounterThr;
   int kDirectionNoChangeCounterThr;
   int kResetWaypointJoystickAxesID;
+  int debug_log_decimation_;
 
   std::shared_ptr<pointcloud_utils_ns::PCLCloud<PlannerCloudPointType>>
       keypose_cloud_;
@@ -154,6 +159,7 @@ private:
   nav_msgs::msg::Odometry keypose_;
   geometry_msgs::msg::Point robot_position_;
   geometry_msgs::msg::Point last_robot_position_;
+  geometry_msgs::msg::PointStamped last_published_waypoint_;
   lidar_model_ns::LiDARModel robot_viewpoint_;
   exploration_path_ns::ExplorationPath exploration_path_;
   Eigen::Vector3d lookahead_point_;
@@ -193,6 +199,9 @@ private:
   bool use_momentum_;
   bool lookahead_point_in_line_of_sight_;
   bool reset_waypoint_;
+  bool returning_home_;
+  bool local_coverage_complete_;
+  bool has_last_published_waypoint_;
   pointcloud_utils_ns::PointCloudDownsizer<pcl::PointXYZ> pointcloud_downsizer_;
 
   int update_representation_runtime_;
@@ -206,6 +215,12 @@ private:
   int direction_change_count_;
   int direction_no_change_count_;
   int momentum_activation_count_;
+  int debug_log_counter_;
+  int last_viewpoint_candidate_count_;
+  int last_uncovered_point_num_;
+  int last_uncovered_frontier_point_num_;
+  int last_global_path_node_count_;
+  int last_local_path_node_count_;
 
   double start_time_;
   double global_direction_switch_time_;
@@ -250,9 +265,15 @@ private:
   // Debug
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr
       pointcloud_manager_neighbor_cells_origin_pub_;
+  std::ofstream debug_log_file_;
 
   void ReadParameters();
   void InitializeData();
+  bool InitDebugLog();
+  void LogDebugRow(const std::string &event,
+                   const std::string &detail = "");
+  void RecordPublishedWaypoint(
+      const geometry_msgs::msg::PointStamped &waypoint);
 
   // Callback functions
   void

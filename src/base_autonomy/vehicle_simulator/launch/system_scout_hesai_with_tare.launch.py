@@ -222,6 +222,9 @@ def generate_launch_description():
         parameters=[
             os.path.join(get_package_share_directory('tare_planner'), 'indoor_small.yaml'),
             {'use_sim_time': use_sim_time},
+            {'enableDebugLog': enableDebugLog},
+            {'debugLogDir': debugLogDir},
+            {'debugLogDecimation': debugLogDecimation},
         ],
         output='screen',
     )

@@ -11,13 +11,60 @@
 
 #include "sensor_coverage_planner/sensor_coverage_planner_ground.h"
 #include "graph/graph.h"
+#include <cerrno>
+#include <iomanip>
 #include <memory>
+#include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 
 using namespace std::chrono_literals;
 
 namespace sensor_coverage_planner_3d_ns {
+namespace {
+bool EnsureDirectoryTree(const std::string &dir_path) {
+  if (dir_path.empty()) {
+    return false;
+  }
+
+  std::string current_path;
+  if (dir_path[0] == '/') {
+    current_path = "/";
+  }
+
+  std::stringstream path_stream(dir_path);
+  std::string part;
+  while (std::getline(path_stream, part, '/')) {
+    if (part.empty()) {
+      continue;
+    }
+    if (!current_path.empty() && current_path.back() != '/') {
+      current_path += "/";
+    }
+    current_path += part;
+
+    if (mkdir(current_path.c_str(), 0775) != 0 && errno != EEXIST) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+std::string SanitizeCsvField(std::string value) {
+  for (char &c : value) {
+    if (c == ',' || c == '\n' || c == '\r') {
+      c = ';';
+    }
+  }
+  return value;
+}
+
+int BoolToInt(bool value) { return value ? 1 : 0; }
+} // namespace
+
 // PlannerParameters::PlannerParameters()
 // {
 // }
@@ -61,6 +108,10 @@ void SensorCoveragePlanner3D::ReadParameters() {
   this->declare_parameter<bool>("kUseLineOfSightLookAheadPoint", true);
   this->declare_parameter<bool>("kNoExplorationReturnHome", true);
   this->declare_parameter<bool>("kUseMomentum", false);
+  this->declare_parameter<bool>("enableDebugLog", false);
+  this->declare_parameter<std::string>("debugLogDir",
+                                       "/tmp/autonomy_stack_debug");
+  this->declare_parameter<int>("debugLogDecimation", 10);
 
   // Double
   this->declare_parameter<double>("kKeyposeCloudDwzFilterLeafSize", 0.2);
@@ -217,6 +268,9 @@ void SensorCoveragePlanner3D::ReadParameters() {
                       kUseLineOfSightLookAheadPoint);
   this->get_parameter("kNoExplorationReturnHome", kNoExplorationReturnHome);
   this->get_parameter("kUseMomentum", kUseMomentum);
+  this->get_parameter("enableDebugLog", enable_debug_log_);
+  this->get_parameter("debugLogDir", debug_log_dir_);
+  this->get_parameter("debugLogDecimation", debug_log_decimation_);
 
   this->get_parameter("kKeyposeCloudDwzFilterLeafSize",
                       kKeyposeCloudDwzFilterLeafSize);
@@ -357,6 +411,95 @@ void SensorCoveragePlanner3D::InitializeData() {
   last_robot_position_ = robot_position_;
 }
 
+bool SensorCoveragePlanner3D::InitDebugLog() {
+  if (!enable_debug_log_) {
+    return false;
+  }
+  if (!EnsureDirectoryTree(debug_log_dir_)) {
+    return false;
+  }
+
+  const std::string log_path = debug_log_dir_ + "/tare_planner.csv";
+  const bool file_exists = static_cast<bool>(std::ifstream(log_path));
+  debug_log_file_.open(log_path, std::ios::out | std::ios::app);
+  if (!debug_log_file_.is_open()) {
+    return false;
+  }
+
+  if (!file_exists) {
+    debug_log_file_
+        << "event,time,robot_x,robot_y,robot_z,robot_yaw,"
+        << "home_x,home_y,home_z,home_dist,"
+        << "lookahead_x,lookahead_y,lookahead_z,"
+        << "waypoint_x,waypoint_y,waypoint_z,"
+        << "registered_cloud_count,keypose_count,candidate_viewpoint_count,"
+        << "uncovered_point_num,uncovered_frontier_point_num,"
+        << "global_path_nodes,local_path_nodes,exploration_path_nodes,"
+        << "exploration_finished,near_home,at_home,stopped,"
+        << "relocation,moving_forward,lookahead_in_los,use_momentum,"
+        << "returning_home,local_coverage_complete,"
+        << "overall_runtime_ms,update_representation_runtime_ms,"
+        << "local_viewpoint_sampling_runtime_ms,local_path_finding_runtime_ms,"
+        << "global_planning_runtime_ms,trajectory_optimization_runtime_ms,"
+        << "momentum_activation_count,detail\n";
+  }
+
+  return true;
+}
+
+void SensorCoveragePlanner3D::RecordPublishedWaypoint(
+    const geometry_msgs::msg::PointStamped &waypoint) {
+  last_published_waypoint_ = waypoint;
+  has_last_published_waypoint_ = true;
+}
+
+void SensorCoveragePlanner3D::LogDebugRow(const std::string &event,
+                                          const std::string &detail) {
+  if (!enable_debug_log_ || !debug_log_file_.is_open()) {
+    return;
+  }
+
+  const double waypoint_x =
+      has_last_published_waypoint_ ? last_published_waypoint_.point.x : 0.0;
+  const double waypoint_y =
+      has_last_published_waypoint_ ? last_published_waypoint_.point.y : 0.0;
+  const double waypoint_z =
+      has_last_published_waypoint_ ? last_published_waypoint_.point.z : 0.0;
+
+  debug_log_file_ << std::fixed << std::setprecision(3) << event << ','
+                  << this->now().seconds() << ',' << robot_position_.x << ','
+                  << robot_position_.y << ',' << robot_position_.z << ','
+                  << robot_yaw_ << ',' << initial_position_.x() << ','
+                  << initial_position_.y() << ',' << initial_position_.z()
+                  << ',' << GetRobotToHomeDistance() << ','
+                  << lookahead_point_.x() << ',' << lookahead_point_.y() << ','
+                  << lookahead_point_.z() << ',' << waypoint_x << ','
+                  << waypoint_y << ',' << waypoint_z << ','
+                  << registered_cloud_count_ << ',' << keypose_count_ << ','
+                  << last_viewpoint_candidate_count_ << ','
+                  << last_uncovered_point_num_ << ','
+                  << last_uncovered_frontier_point_num_ << ','
+                  << last_global_path_node_count_ << ','
+                  << last_local_path_node_count_ << ','
+                  << exploration_path_.nodes_.size() << ','
+                  << BoolToInt(exploration_finished_) << ','
+                  << BoolToInt(near_home_) << ',' << BoolToInt(at_home_) << ','
+                  << BoolToInt(stopped_) << ',' << BoolToInt(relocation_) << ','
+                  << BoolToInt(moving_forward_) << ','
+                  << BoolToInt(lookahead_point_in_line_of_sight_) << ','
+                  << BoolToInt(use_momentum_) << ','
+                  << BoolToInt(returning_home_) << ','
+                  << BoolToInt(local_coverage_complete_) << ','
+                  << overall_runtime_ << ',' << update_representation_runtime_
+                  << ',' << local_viewpoint_sampling_runtime_ << ','
+                  << local_path_finding_runtime_ << ','
+                  << global_planning_runtime_ << ','
+                  << trajectory_optimization_runtime_ << ','
+                  << momentum_activation_count_ << ','
+                  << SanitizeCsvField(detail) << '\n';
+  debug_log_file_.flush();
+}
+
 SensorCoveragePlanner3D::SensorCoveragePlanner3D()
     : Node("tare_planner_node"), keypose_cloud_update_(false),
       initialized_(false), lookahead_point_update_(false), relocation_(false),
@@ -367,6 +510,23 @@ SensorCoveragePlanner3D::SensorCoveragePlanner3D()
       reset_waypoint_(false), registered_cloud_count_(0), keypose_count_(0),
       direction_change_count_(0), direction_no_change_count_(0),
       momentum_activation_count_(0), reset_waypoint_joystick_axis_value_(-1.0) {
+  enable_debug_log_ = false;
+  debug_log_dir_ = "/tmp/autonomy_stack_debug";
+  debug_log_decimation_ = 10;
+  debug_log_counter_ = 0;
+  last_viewpoint_candidate_count_ = 0;
+  last_uncovered_point_num_ = 0;
+  last_uncovered_frontier_point_num_ = 0;
+  last_global_path_node_count_ = 0;
+  last_local_path_node_count_ = 0;
+  returning_home_ = false;
+  local_coverage_complete_ = false;
+  has_last_published_waypoint_ = false;
+  last_published_waypoint_.header.frame_id = kWorldFrameID;
+  last_published_waypoint_.point.x = 0.0;
+  last_published_waypoint_.point.y = 0.0;
+  last_published_waypoint_.point.z = 0.0;
+  lookahead_point_ = Eigen::Vector3d::Zero();
   std::cout << "finished constructor" << std::endl;
 }
 
@@ -380,6 +540,15 @@ bool SensorCoveragePlanner3D::initialize() {
 
   // Initialize(shared_from_this());
   InitializeData();
+
+  if (InitDebugLog()) {
+    RCLCPP_INFO(this->get_logger(), "TARE debug log: %s/tare_planner.csv",
+                debug_log_dir_.c_str());
+  } else if (enable_debug_log_) {
+    RCLCPP_WARN(this->get_logger(),
+                "TARE debug log disabled, cannot open %s/tare_planner.csv",
+                debug_log_dir_.c_str());
+  }
 
   keypose_graph_->SetAllowVerticalEdge(false);
 
@@ -472,6 +641,7 @@ void SensorCoveragePlanner3D::ExplorationStartCallback(
     const std_msgs::msg::Bool::ConstSharedPtr start_msg) {
   if (start_msg->data) {
     start_exploration_ = true;
+    LogDebugRow("start_signal_received");
   }
 }
 
@@ -651,6 +821,8 @@ void SensorCoveragePlanner3D::JoystickCallback(
       waypoint.point.y = robot_position_.y;
       waypoint.point.z = robot_position_.z;
       waypoint_pub_->publish(waypoint);
+      RecordPublishedWaypoint(waypoint);
+      LogDebugRow("reset_waypoint", "joystick");
       std::cout << "reset waypoint" << std::endl;
     }
     reset_waypoint_joystick_axis_value_ =
@@ -670,6 +842,8 @@ void SensorCoveragePlanner3D::ResetWaypointCallback(
   waypoint.point.y = robot_position_.y;
   waypoint.point.z = robot_position_.z;
   waypoint_pub_->publish(waypoint);
+  RecordPublishedWaypoint(waypoint);
+  LogDebugRow("reset_waypoint", "topic");
   std::cout << "reset waypoint" << std::endl;
 }
 
@@ -687,6 +861,8 @@ void SensorCoveragePlanner3D::SendInitialWaypoint() {
   waypoint.point.y = robot_position_.y + dy;
   waypoint.point.z = robot_position_.z;
   waypoint_pub_->publish(waypoint);
+  RecordPublishedWaypoint(waypoint);
+  LogDebugRow("initial_waypoint", "startup_forward_seed");
 }
 
 void SensorCoveragePlanner3D::UpdateKeyposeGraph() {
@@ -1370,6 +1546,9 @@ void SensorCoveragePlanner3D::PublishWaypoint() {
   }
   misc_utils_ns::Publish(shared_from_this(), waypoint_pub_, waypoint,
                          kWorldFrameID);
+  waypoint.header.frame_id = kWorldFrameID;
+  waypoint.header.stamp = this->now();
+  RecordPublishedWaypoint(waypoint);
 }
 
 void SensorCoveragePlanner3D::PublishRuntime() {
@@ -1422,6 +1601,8 @@ void SensorCoveragePlanner3D::PrintExplorationStatus(std::string status,
     printf(cursclean);
   }
   std::cout << std::endl << "\033[1;32m" << status << "\033[0m" << std::endl;
+  RCLCPP_INFO(this->get_logger(), "TARE status: %s", status.c_str());
+  LogDebugRow("status", status);
 }
 
 void SensorCoveragePlanner3D::CountDirectionChange() {
@@ -1472,12 +1653,15 @@ void SensorCoveragePlanner3D::execute() {
   if (!initialized_) {
     SendInitialWaypoint();
     start_time_ = this->now().seconds();
-    if(start_time_ == 0.0){
-      RCLCPP_ERROR(this->get_logger(), "Start time is zero, time source (use_time_time) not set correctly. Exiting...");
+    if (start_time_ == 0.0) {
+      RCLCPP_ERROR(this->get_logger(),
+                   "Start time is zero, time source (use_time_time) not set "
+                   "correctly. Exiting...");
       exit(1);
     }
     global_direction_switch_time_ = this->now().seconds();
     initialized_ = true;
+    LogDebugRow("planner_initialized");
     return;
   }
 
@@ -1494,9 +1678,11 @@ void SensorCoveragePlanner3D::execute() {
     UpdateGlobalRepresentation();
 
     int viewpoint_candidate_count = UpdateViewPoints();
+    last_viewpoint_candidate_count_ = viewpoint_candidate_count;
     if (viewpoint_candidate_count == 0) {
       RCLCPP_WARN(rclcpp::get_logger("standalone_logger"),
                   "Cannot get candidate viewpoints, skipping this round");
+      LogDebugRow("planner_skip", "no_candidate_viewpoints");
       return;
     }
 
@@ -1510,6 +1696,8 @@ void SensorCoveragePlanner3D::execute() {
     } else {
       viewpoint_manager_->ResetViewPointCoverage();
     }
+    last_uncovered_point_num_ = uncovered_point_num;
+    last_uncovered_frontier_point_num_ = uncovered_frontier_point_num;
 
     update_representation_timer.Stop(false);
     update_representation_runtime_ +=
@@ -1524,15 +1712,17 @@ void SensorCoveragePlanner3D::execute() {
     exploration_path_ns::ExplorationPath local_path;
     LocalPlanning(uncovered_point_num, uncovered_frontier_point_num,
                   global_path, local_path);
+    last_global_path_node_count_ = global_path.nodes_.size();
+    last_local_path_node_count_ = local_path.nodes_.size();
+    returning_home_ = grid_world_->IsReturningHome();
+    local_coverage_complete_ = local_coverage_planner_->IsLocalCoverageComplete();
 
     near_home_ = GetRobotToHomeDistance() < kRushHomeDist;
     at_home_ = GetRobotToHomeDistance() < kAtHomeDistThreshold;
 
     double current_time = this->now().seconds();
-    double delta_time = current_time - start_time_;
 
-    if (grid_world_->IsReturningHome() &&
-        local_coverage_planner_->IsLocalCoverageComplete() &&
+    if (returning_home_ && local_coverage_complete_ &&
         (current_time - start_time_) > 5) {
       if (!exploration_finished_) {
         PrintExplorationStatus("Exploration completed, returning home", false);
@@ -1565,6 +1755,12 @@ void SensorCoveragePlanner3D::execute() {
     PublishLocalPlanningVisualization(local_path);
     PublishGlobalPlanningVisualization(global_path, local_path);
     PublishRuntime();
+
+    const int log_stride = debug_log_decimation_ > 0 ? debug_log_decimation_ : 1;
+    if (debug_log_counter_ % log_stride == 0) {
+      LogDebugRow("planner_cycle");
+    }
+    debug_log_counter_++;
   }
 }
 } // namespace sensor_coverage_planner_3d_ns
