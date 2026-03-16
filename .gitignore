@@ -28,3 +28,5 @@ src/base_autonomy/vehicle_simulator/log/*
 
 runtime_logs/navigation_debug/*
 !runtime_logs/README.md
+env/
+*.arm64.bak
