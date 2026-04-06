@@ -111,8 +111,8 @@ def generate_launch_description():
         'ariadnePublishGraph', default_value='false',
         description='是否发布图可视化')
     declare_fastlio_config = DeclareLaunchArgument(
-        'fastlioConfig', default_value='hesai32_kuangye.yaml',
-        description='FAST-LIO 配置文件名，位于 fast_lio/share/fast_lio/config/')
+        'fastlioConfig', default_value='hesai_xt32.yaml',
+        description='FAST-LIO 配置文件名，位于 fast_lio/share/fast_lio/config/，与 with_tare 保持一致')
 
     fastlio_config_path = os.path.join(
         get_package_share_directory('fast_lio'), 'config')
