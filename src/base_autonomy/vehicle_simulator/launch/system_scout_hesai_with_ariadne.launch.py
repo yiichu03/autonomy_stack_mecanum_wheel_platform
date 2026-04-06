@@ -259,7 +259,7 @@ def generate_launch_description():
         name='rviz2',
         arguments=['-d', os.path.join(
             get_package_share_directory('vehicle_simulator'),
-            'rviz', 'vehicle_simulator.rviz')],
+            'rviz', 'vehicle_simulator_ariadne.rviz')],
         output='screen',
     )
 

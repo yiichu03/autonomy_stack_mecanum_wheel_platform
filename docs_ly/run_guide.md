@@ -36,8 +36,13 @@
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/octomap_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
 ```
+
+> octomap_ws 和 ARiADNE 只有 ARiADNE 模式需要，但多 source 不影响。统一五行省心。
+> `autonomy_stack` 必须最后 source。
 
 如果你刚重新编译过当前工作区，最好新开终端再 source 一次，避免仍停留在旧环境。
 
@@ -147,22 +152,19 @@ ros2 topic hz /camera/imu
 
 ### 终端 E：主导航栈
 
+先 source 五行环境（见 3.2 节），然后选一个 launch：
+
 #### 方案一：只跑 Base Autonomy
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
-source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
 ros2 launch vehicle_simulator system_scout_hesai.launch.py
 ```
 
 #### 方案二：接 far_planner（人工指定目标点）
+
 默认是 outdoor.yaml
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
-source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
 ros2 launch vehicle_simulator system_scout_hesai_with_far_planner.launch.py
 ```
 
@@ -171,33 +173,96 @@ ros2 launch vehicle_simulator system_scout_hesai_with_far_planner.launch.py
 启动后机器人自动开始探索，无需在 RViz 中点击目标。
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
-source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+# 小房间（默认 indoor_small.yaml）
 ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py
 
-ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=indoor_large.yaml
-ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=outdoor.yaml
-ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=corridor_medium.yaml
-ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=corridor_medium.yaml maxSpeed:=0.3
+# 窄走廊 <2m
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=corridor_v2.yaml maxSpeed:=0.3
 
+# 中等走廊 2-3m
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=corridor_medium.yaml
+
+# 大房间
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=indoor_large.yaml
+
+# 室外
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=outdoor.yaml
 ```
 
-验证 TARE 是否正常出探索目标点：
+#### 方案四：接 ARiADNE（DRL 自主探索）
+
+启动后机器人自动开始探索，行为偏激进。使用专属 rviz 配置（含 `/projected_map`、`/frontier`、`/node`、`/edge`）。
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
-ros2 node list | grep tare
-ros2 topic echo /way_point
+# 默认参数，适合大多数场景
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py
 
-source /opt/ros/humble/setup.bash
-ros2 topic echo /way_point
+# 窄走廊（<2m）：降低地图分辨率让网格更精细
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+  ariadneMapResolution:=0.2 maxSpeed:=0.3
+
+# 开阔房间：默认即可，可适当提速
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py maxSpeed:=0.5
+
+# 开启图可视化（RViz 显示规划图节点和边）
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py ariadnePublishGraph:=true
 ```
 
-启动后数秒内应看到 `/way_point` 持续更新。若无输出，检查 `tare_planner_node` 终端日志。
+ARiADNE 关键参数：
 
-> 注意：方案二和方案三互斥，两者都会发布 `/way_point`，不能同时运行。
+| 参数 | 默认值 | 含义 |
+|---|---|---|
+| `ariadneSensorRange` | 20.0 m | 感知半径 |
+| `ariadneMapResolution` | 0.4 m | OccupancyGrid 分辨率，越小越精细但越慢 |
+| `ariadneNodeResolution` | 2.0 m | 图节点间距，决定 waypoint 粗细 |
+| `ariadnePublishGraph` | false | 是否发布 `/node` `/edge` 到 RViz |
+
+> 注意：方案二、三、四互斥，都会发布 `/way_point`，不能同时运行。
+
+### 验证 TARE 是否正常工作
+
+```bash
+ros2 node list | grep tare           # 应输出 tare_planner_node
+ros2 topic echo /way_point           # 启动后数秒内应持续更新
+```
+
+若无输出，检查 `tare_planner_node` 终端日志。
+
+### 验证 ARiADNE 是否正常工作
+
+按顺序检查，任何一步失败先排查再往下：
+
+```bash
+# 1. 上游数据是否到位
+ros2 topic hz /state_estimation      # 期望 ~10 Hz（FAST-LIO2）
+ros2 topic hz /sensor_scan           # 期望 ~10 Hz（sensor_scan_generation）
+ros2 topic hz /projected_map         # 期望 ~1-2 Hz（octomap_server）
+
+# 2. rl_planner 是否初始化（终端 E 应显示 "initialize robot location at [x, y]"）
+ros2 node list | grep rl_planner     # 应输出 /rl_planner
+
+# 3. 是否在产生 waypoint
+ros2 topic echo /way_point           # 应持续更新
+
+# 4. 探索图是否在扩展（需 ariadnePublishGraph:=true）
+ros2 topic echo /frontier --no-arr | head -5    # frontier = 未探索边界
+ros2 topic echo /node --no-arr | head -5        # 图节点
+
+# 5. 推理速度
+ros2 topic echo /runtime             # 每步应 < 0.5s
+
+# 6. 探索是否完成
+ros2 topic echo /exploration_finish   # data: false = 还在探索, true = 完成
+
+# 7. 下游是否响应
+ros2 topic echo /cmd_vel             # 有 way_point 后应有非零输出
+```
+
+**常见问题：**
+
+- `/projected_map` 没数据 → 检查 `/sensor_scan` 有无输出，再检查 TF：`ros2 run tf2_ros tf2_echo map sensor_at_scan`
+- `rl_planner` 一直显示 "Waiting for map and location data..." → `/projected_map` 或 `/state_estimation` 没数据
+- `rl_planner` 崩溃 ImportError → `pip3 install scikit-image`；torch 缺失见 `run_guide_ariadne.md` 第 3.2 节
 
 ### 终端 F：观察速度命令
 
@@ -241,6 +306,35 @@ ros2 topic echo /cmd_vel
 
 1. `free_goal` 和 `original_goal` 重合
 2. 或者规划没有成功，`free_goal` 根本没单独偏移出来
+
+### 5.3 ARiADNE 模式
+
+ARiADNE launch 使用专属 rviz 配置 `vehicle_simulator_ariadne.rviz`，自动加载。
+
+RViz 里会看到两个 Group：
+
+**Navigation 组**（和其他模式共用）：
+
+1. `/registered_scan` — 白色累积点云
+2. `/terrain_map` — 地形分类（由 `terrain_analysis` 节点发布）
+3. `/path` — 绿色路径线（localPlanner）
+4. `/free_paths` — 蓝色可通行路径
+5. `/way_point` — 紫色球（当前目标点）
+
+**ARiADNE 组**（DRL 特有）：
+
+1. `/projected_map` — 2D 占用格栅（灰色底图，由 octomap_server 发布）
+2. `/frontier` — 红色方块，未探索边界
+3. `/node` — 彩色球体，规划图节点（需 `ariadnePublishGraph:=true`）
+4. `/edge` — 图节点间的边（需 `ariadnePublishGraph:=true`）
+5. `/occupied_cells_vis_array` — 3D octomap 体素（默认关闭，开启较耗资源）
+
+**怎么判断 ARiADNE 在正常工作：**
+
+- `/projected_map` 底图持续扩大 → octomap 正常建图
+- `/frontier` 红块在地图边缘出现又消失 → 正在探索新区域
+- `/way_point` 紫球不断跳到新位置 → DRL 在选择下一个探索目标
+- 所有 frontier 消失 + `/exploration_finish` 为 true → 探索完成
 
 ## 6. `/cmd_vel` 怎样算大致正常
 
