@@ -207,6 +207,10 @@ ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py maxSpeed
 # 开启图可视化（RViz 显示规划图节点和边）
 ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py ariadnePublishGraph:=true
 ```
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+    ariadneMapResolution:=0.15 \
+    ariadnePublishGraph:=true \
+    maxSpeed:=0.3
 
 ARiADNE 关键参数：
 
