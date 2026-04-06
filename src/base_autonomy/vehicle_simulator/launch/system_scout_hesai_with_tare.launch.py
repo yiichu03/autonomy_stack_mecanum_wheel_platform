@@ -42,6 +42,7 @@ Scout Mini + Hesai XT32 + RealSense D455 + TARE 自主探索规划 launch 文件
 
 TARE 配置说明：
   scenario=indoor_small（默认）：室内小空间，viewpoint 网格 9m×9m，kSensorRange=3m
+  scenario=corridor_medium：走廊/半室外过渡场景，较 indoor_small 略放大感知范围，但保持较密 viewpoint
   config 文件：src/exploration_planner/tare_planner/config/indoor_small.yaml
   kAutoStart=true：启动后立即开始探索
   kRushHome=true：探索结束后自动返回起点
@@ -104,7 +105,7 @@ def generate_launch_description():
     declare_vehicleY            = DeclareLaunchArgument('vehicleY',              default_value='0.0',   description='初始目标点 Y')
     declare_maxSpeed            = DeclareLaunchArgument('maxSpeed',              default_value='0.5',   description='最大速度 (m/s)')
     declare_checkTerrainConn    = DeclareLaunchArgument('checkTerrainConn',      default_value='true',  description='')
-    declare_tare_config         = DeclareLaunchArgument('tareConfig',            default_value='indoor_small.yaml', description='TARE 配置文件：indoor_small.yaml / indoor_large.yaml / outdoor.yaml')
+    declare_tare_config         = DeclareLaunchArgument('tareConfig',            default_value='indoor_small.yaml', description='TARE 配置文件：indoor_small.yaml / corridor_medium.yaml / indoor_large.yaml / outdoor.yaml')
     declare_enable_debug_log    = DeclareLaunchArgument('enableDebugLog',        default_value='true',  description='是否记录规划/控制调试 CSV 日志')
     declare_debug_log_dir       = DeclareLaunchArgument('debugLogDir',           default_value=default_debug_log_dir, description='规划/控制调试日志目录')
     declare_debug_log_decimation = DeclareLaunchArgument('debugLogDecimation',   default_value='10',    description='调试日志采样降频系数')

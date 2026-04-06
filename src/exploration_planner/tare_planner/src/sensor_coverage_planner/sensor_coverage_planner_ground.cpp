@@ -12,6 +12,7 @@
 #include "sensor_coverage_planner/sensor_coverage_planner_ground.h"
 #include "graph/graph.h"
 #include <cerrno>
+#include <cmath>
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -1504,7 +1505,15 @@ bool SensorCoveragePlanner3D::GetLookAheadPoint(
 
   lookahead_point_direction_ = lookahead_point - robot_position;
   lookahead_point_direction_.z() = 0.0;
-  lookahead_point_direction_.normalize();
+  const double lookahead_dir_norm = lookahead_point_direction_.norm();
+  if (lookahead_dir_norm > 1e-6) {
+    lookahead_point_direction_ /= lookahead_dir_norm;
+  } else {
+    // Fall back to the current heading if the lookahead collapses to the robot pose.
+    lookahead_point_direction_.x() = std::cos(robot_yaw_);
+    lookahead_point_direction_.y() = std::sin(robot_yaw_);
+    lookahead_point_direction_.z() = 0.0;
+  }
 
   pcl::PointXYZI point;
   point.x = lookahead_point.x();
@@ -1532,17 +1541,24 @@ void SensorCoveragePlanner3D::PublishWaypoint() {
   } else {
     double dx = lookahead_point_.x() - robot_position_.x;
     double dy = lookahead_point_.y() - robot_position_.y;
-    double r = sqrt(dx * dx + dy * dy);
+    double r = std::hypot(dx, dy);
     double extend_dist = lookahead_point_in_line_of_sight_
                              ? kExtendWayPointDistanceBig
                              : kExtendWayPointDistanceSmall;
-    if (r < extend_dist && kExtendWayPoint) {
-      dx = dx / r * extend_dist;
-      dy = dy / r * extend_dist;
+    if (!std::isfinite(dx) || !std::isfinite(dy) ||
+        !std::isfinite(lookahead_point_.z())) {
+      waypoint.point.x = robot_position_.x;
+      waypoint.point.y = robot_position_.y;
+      waypoint.point.z = robot_position_.z;
+    } else {
+      if (kExtendWayPoint && r > 1e-6 && r < extend_dist) {
+        dx = dx / r * extend_dist;
+        dy = dy / r * extend_dist;
+      }
+      waypoint.point.x = dx + robot_position_.x;
+      waypoint.point.y = dy + robot_position_.y;
+      waypoint.point.z = lookahead_point_.z();
     }
-    waypoint.point.x = dx + robot_position_.x;
-    waypoint.point.y = dy + robot_position_.y;
-    waypoint.point.z = lookahead_point_.z();
   }
   misc_utils_ns::Publish(shared_from_this(), waypoint_pub_, waypoint,
                          kWorldFrameID);

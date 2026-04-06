@@ -178,7 +178,8 @@ ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py
 
 ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=indoor_large.yaml
 ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=outdoor.yaml
-
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=corridor_medium.yaml
+ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:=corridor_medium.yaml maxSpeed:=0.3
 
 ```
 
