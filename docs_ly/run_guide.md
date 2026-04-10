@@ -193,33 +193,69 @@ ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:
 
 启动后机器人自动开始探索，行为偏激进。使用专属 rviz 配置（含 `/projected_map`、`/frontier`、`/node`、`/edge`）。
 
+**场景一：杂乱办公室 / 有窄门（门宽 < 1m）**
+
+默认 resolution=0.4m 时，0.8m 的门只有 2 个 cell，一个噪声点就会堵死通道。必须调小。
+0.15 too small
 ```bash
-# 默认参数，适合大多数场景
-ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py
-
-# 窄走廊（<2m）：降低地图分辨率让网格更精细
 ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
-  ariadneMapResolution:=0.2 maxSpeed:=0.3
-
-# 开阔房间：默认即可，可适当提速
-ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py maxSpeed:=0.5
-
-# 开启图可视化（RViz 显示规划图节点和边）
-ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py ariadnePublishGraph:=true
+  ariadneMapResolution:=0.2 \
+  ariadneSensorRange:=10.0 \
+  ariadneNodeResolution:=1.0 \
+  maxSpeed:=0.3
 ```
+
+- `resolution 0.15` — 门变成 5+ 个 cell，噪声难以完全堵死
+- `sensorRange 10.0` — 办公室小，20m 浪费算力在墙上
+- `nodeResolution 1.0` — 小房间需要更密的图节点覆盖
+- `maxSpeed 0.3` — 桌椅间安全低速
+
+**场景二：走廊（宽 1.5–3m，长直线段）**
+
+```bash
 ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
-    ariadneMapResolution:=0.15 \
-    ariadnePublishGraph:=true \
-    maxSpeed:=0.3
+  ariadneMapResolution:=0.2 \
+  ariadneSensorRange:=100.0 \
+  ariadneNodeResolution:=1.5 \
+  maxSpeed:=0.5
+```
+
+- `resolution 0.2` — 走廊比门宽，0.2 在精度和速度间平衡
+- `sensorRange 15.0` — 走廊长但不需要 20m 那么远
+- `nodeResolution 1.5` — 走廊不需要特别密的图，但 2.0 可能跳过分支入口
+
+**场景三：开阔大房间 / 仓库**
+
+默认参数即可，可选增大感知范围：
+
+```bash
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+  ariadneSensorRange:=25.0 \
+  maxSpeed:=0.5
+```
+
+**调试模式：开启图可视化**
+
+加 `ariadnePublishGraph:=true` 在 RViz 中显示 `/node`、`/edge`、`/frontier`，方便排查 DRL 决策：
+
+```bash
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+  ariadneMapResolution:=0.15 \
+  ariadnePublishGraph:=true \
+  maxSpeed:=0.3
+```
 
 ARiADNE 关键参数：
 
-| 参数 | 默认值 | 含义 |
-|---|---|---|
-| `ariadneSensorRange` | 20.0 m | 感知半径 |
-| `ariadneMapResolution` | 0.4 m | OccupancyGrid 分辨率，越小越精细但越慢 |
-| `ariadneNodeResolution` | 2.0 m | 图节点间距，决定 waypoint 粗细 |
-| `ariadnePublishGraph` | false | 是否发布 `/node` `/edge` 到 RViz |
+| 参数 | 默认值 | 含义 | 调小效果 | 调大效果 |
+|---|---|---|---|---|
+| `ariadneMapResolution` | 0.4 m | OccupancyGrid 分辨率 | 更精细，窄门不易堵死，但更耗算力 | 更粗，快但窄通道容易被堵 |
+| `ariadneSensorRange` | 20.0 m | 感知半径 | 只关注近处，适合小房间 | 看得更远，适合开阔场景 |
+| `ariadneNodeResolution` | 2.0 m | 图节点间距 | 图更密，覆盖细致但节点多 | 图更稀疏，可能跳过分支 |
+| `ariadnePublishGraph` | false | 发布 `/node` `/edge` | — | 开启后 RViz 可视化图结构 |
+| `maxSpeed` | 0.5 m/s | 最大速度 | 安全但慢 | 快但可能来不及避障 |
+
+> **已知限制**：`sensor_model.hit`（octomap 障碍物置信度）当前硬编码为 1.0，意味着单个噪声点就会立即标记 cell 为占用。如果调低 resolution 后窄门仍被堵，需要在 launch 文件中手动修改 `sensor_model.hit`（建议 0.7）和 `sensor_model.miss`（建议 0.4）。
 
 > 注意：方案二、三、四互斥，都会发布 `/way_point`，不能同时运行。
 
