@@ -52,6 +52,11 @@ def generate_launch_description():
     ariadneMapResolution = LaunchConfiguration('ariadneMapResolution')
     ariadneNodeResolution = LaunchConfiguration('ariadneNodeResolution')
     ariadnePublishGraph = LaunchConfiguration('ariadnePublishGraph')
+    ariadneUtilityRangeFactor = LaunchConfiguration('ariadneUtilityRangeFactor')
+    ariadneMinUtility = LaunchConfiguration('ariadneMinUtility')
+    ariadneWaypointThreshold = LaunchConfiguration('ariadneWaypointThreshold')
+    ariadneOctomapHit = LaunchConfiguration('ariadneOctomapHit')
+    ariadneOctomapMiss = LaunchConfiguration('ariadneOctomapMiss')
     fastlioConfig = LaunchConfiguration('fastlioConfig')
 
     workspace_root = os.path.dirname(
@@ -110,6 +115,21 @@ def generate_launch_description():
     declare_ariadne_publish_graph = DeclareLaunchArgument(
         'ariadnePublishGraph', default_value='false',
         description='是否发布图可视化')
+    declare_ariadne_utility_range_factor = DeclareLaunchArgument(
+        'ariadneUtilityRangeFactor', default_value='0.5',
+        description='ARiADNE utility_range_factor，决定节点统计 frontier 的有效半径比例')
+    declare_ariadne_min_utility = DeclareLaunchArgument(
+        'ariadneMinUtility', default_value='3',
+        description='ARiADNE 最小 frontier utility，低于该值的节点视为无效')
+    declare_ariadne_waypoint_threshold = DeclareLaunchArgument(
+        'ariadneWaypointThreshold', default_value='2.0',
+        description='ARiADNE 认为“到达 waypoint”的距离阈值 (m)')
+    declare_ariadne_octomap_hit = DeclareLaunchArgument(
+        'ariadneOctomapHit', default_value='1.0',
+        description='octomap 障碍命中置信度，越大越容易把单次观测记成占用')
+    declare_ariadne_octomap_miss = DeclareLaunchArgument(
+        'ariadneOctomapMiss', default_value='0.45',
+        description='octomap 空闲更新置信度，通常与 ariadneOctomapHit 配对调整')
     declare_fastlio_config = DeclareLaunchArgument(
         'fastlioConfig', default_value='hesai_xt32.yaml',
         description='FAST-LIO 配置文件名，位于 fast_lio/share/fast_lio/config/，与 with_tare 保持一致')
@@ -214,8 +234,8 @@ def generate_launch_description():
             {'occupancy_min_z': 0.0},
             {'occupancy_max_z': 1.2},
             {'sensor_model.max_range': ariadneSensorRange},
-            {'sensor_model.hit': 1.0},
-            {'sensor_model.miss': 0.45},
+            {'sensor_model.hit': ariadneOctomapHit},
+            {'sensor_model.miss': ariadneOctomapMiss},
             {'sensor_model.max': 1.0},
             {'sensor_model.min': 0.2},
         ],
@@ -231,11 +251,11 @@ def generate_launch_description():
             {'publish_graph': ariadnePublishGraph},
             {'node_resolution': ariadneNodeResolution},
             {'sensor_range': ariadneSensorRange},
-            {'utility_range_factor': 0.5},
-            {'min_utility': 3},
+            {'utility_range_factor': ariadneUtilityRangeFactor},
+            {'min_utility': ariadneMinUtility},
             {'frontier_downsample_factor': 1},
             {'map_resolution': ariadneMapResolution},
-            {'waypoint_threshold': 2.0},
+            {'waypoint_threshold': ariadneWaypointThreshold},
             {'next_waypoint_threshold': 4.0},
             {'hard_update_threshold': 10.0},
             {'frontier_cluster_range': 10.0},
@@ -306,6 +326,11 @@ def generate_launch_description():
     ld.add_action(declare_ariadne_map_resolution)
     ld.add_action(declare_ariadne_node_resolution)
     ld.add_action(declare_ariadne_publish_graph)
+    ld.add_action(declare_ariadne_utility_range_factor)
+    ld.add_action(declare_ariadne_min_utility)
+    ld.add_action(declare_ariadne_waypoint_threshold)
+    ld.add_action(declare_ariadne_octomap_hit)
+    ld.add_action(declare_ariadne_octomap_miss)
     ld.add_action(declare_fastlio_config)
     ld.add_action(LogInfo(msg=['Navigation debug logs: ', debugLogDir]))
 
