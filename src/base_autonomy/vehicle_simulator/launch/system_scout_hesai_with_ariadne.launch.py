@@ -24,7 +24,7 @@ from datetime import datetime
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, SetParameter
@@ -58,6 +58,7 @@ def generate_launch_description():
     ariadneOctomapHit = LaunchConfiguration('ariadneOctomapHit')
     ariadneOctomapMiss = LaunchConfiguration('ariadneOctomapMiss')
     fastlioConfig = LaunchConfiguration('fastlioConfig')
+    fastlioVariant = LaunchConfiguration('fastlioVariant')
 
     workspace_root = os.path.dirname(
         os.path.dirname(
@@ -133,25 +134,52 @@ def generate_launch_description():
     declare_fastlio_config = DeclareLaunchArgument(
         'fastlioConfig', default_value='hesai_xt32.yaml',
         description='FAST-LIO 配置文件名，位于 fast_lio/share/fast_lio/config/，与 with_tare 保持一致')
+    declare_fastlio_variant = DeclareLaunchArgument(
+        'fastlioVariant', default_value='official',
+        description='FAST-LIO 版本：official=官方 hku-mars 版，bitbucket=老师定制版（需 source install_bitbucket）')
 
     fastlio_config_path = os.path.join(
         get_package_share_directory('fast_lio'), 'config')
 
-    start_fastlio = Node(
-        package='fast_lio',
-        executable='fastlio_mapping',
-        name='fastlio_mapping',
-        parameters=[
-            PathJoinSubstitution([fastlio_config_path, fastlioConfig]),
-            {'use_sim_time': use_sim_time},
-        ],
-        remappings=[
+    def launch_fastlio(context):
+        variant = context.launch_configurations['fastlioVariant']
+        config_name = context.launch_configurations['fastlioConfig']
+        sim_time = context.launch_configurations['use_sim_time']
+        config_full_path = os.path.join(
+            get_package_share_directory('fast_lio'), 'config', config_name)
+
+        common_remappings = [
             ('/Odometry', '/state_estimation_raw'),
             ('/cloud_registered', '/registered_scan_raw'),
             ('/path', '/fastlio_path'),
-        ],
-        output='screen',
-    )
+        ]
+
+        if variant == 'bitbucket':
+            return [Node(
+                package='fast_lio',
+                executable='fastlio_online',
+                name='fastlio_mapping',
+                parameters=[{
+                    'config_yaml': config_full_path,
+                    'use_sim_time': sim_time == 'true',
+                }],
+                remappings=common_remappings,
+                output='screen',
+            )]
+        else:
+            return [Node(
+                package='fast_lio',
+                executable='fastlio_mapping',
+                name='fastlio_mapping',
+                parameters=[
+                    config_full_path,
+                    {'use_sim_time': sim_time == 'true'},
+                ],
+                remappings=common_remappings,
+                output='screen',
+            )]
+
+    start_fastlio = OpaqueFunction(function=launch_fastlio)
 
     start_registered_scan_relay = Node(
         package='vehicle_simulator',
@@ -332,6 +360,7 @@ def generate_launch_description():
     ld.add_action(declare_ariadne_octomap_hit)
     ld.add_action(declare_ariadne_octomap_miss)
     ld.add_action(declare_fastlio_config)
+    ld.add_action(declare_fastlio_variant)
     ld.add_action(LogInfo(msg=['Navigation debug logs: ', debugLogDir]))
 
     ld.add_action(SetParameter(name='use_sim_time', value=use_sim_time))

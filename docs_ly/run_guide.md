@@ -233,11 +233,11 @@ ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
 **场景三：长走廊 + 岔路口（走一段就停、没有继续去探岔路）**
 
 先给一组推荐基准组。它对应的是“主走廊能走，但到岔路口前 utility 提前掉光，或者 waypoint 还没真到就被判到达”的情况。
-
+ 
 ```bash
 ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
   ariadneMapResolution:=0.2 \
-  ariadneSensorRange:=10.0 \
+  ariadneSensorRange:=100.0 \
   ariadneNodeResolution:=1.0 \
   ariadneUtilityRangeFactor:=0.5 \
   ariadneMinUtility:=2 \
@@ -736,4 +736,98 @@ ros2 launch scout_base scout_mini_base.launch.py port_name:=can0
 
 右上那片球颜色更偏黄绿橙，说明那边在当前时刻“还有探索收益”。
 左下和中下很多球偏蓝紫，说明那些区域大多已经探索过，收益低。
-如果你的岔路口附近只有蓝紫球，没有新的黄橙球，通常不是策略“没学会”，而是它当前图上确实没看到足够 frontier。
+如果你的岔路口附近只有蓝紫球，没有新的黄橙球，通常不是策略”没学会”，而是它当前图上确实没看到足够 frontier。
+
+## 10. FAST-LIO 建图（fastlio_ws）
+
+### 10.1 两个 FAST-LIO 的区别
+
+`fastlio_ws/src/` 下有两个 FAST-LIO：
+
+| 目录 | 来源 | 用途 |
+|------|------|------|
+| `FAST_LIO` | [hku-mars/FAST_LIO](https://github.com/hku-mars/FAST_LIO)（官方 ROS2 分支） | 已接入主 launch（`system_scout_hesai*.launch.py`），当前系统在用 |
+| `fast_lio_bitbucket` | 老师私有仓库 `bitbucket.org/JzHuai0108/fast_lio`，`migrate_ros2` 分支 | 老师定制版，支持离线 rosbag 回放和在线订阅模式，配置更灵活 |
+
+注意：两个包的 `package.xml` 里包名都是 `fast_lio`，不能在同一个 colcon workspace 里同时编译。编译 `fast_lio_bitbucket` 时需要用 `--paths` 指定路径。
+
+### 10.2 编译 fast_lio_bitbucket
+
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav/fastlio_ws
+source /opt/ros/humble/setup.bash
+
+# 初始化 submodule（首次编译前需要）
+cd src/fast_lio_bitbucket && git submodule update --init --recursive && cd ../..
+
+# 编译（用独立的 build/install 目录避免和 FAST_LIO 冲突）
+colcon build --packages-select fast_lio \
+  --paths src/fast_lio_bitbucket/ros2 \
+  --build-base build_bitbucket \
+  --install-base install_bitbucket \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
+```
+
+### 10.3 在线模式运行（独立启动，未接入主 launch）
+
+```bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install_bitbucket/setup.bash
+
+# 默认使用 hesai32_nus_carter_realsenseimu.yaml（我们的 RealSense IMU 外参）
+ros2 launch fast_lio mapping_online.launch.py
+
+# 使用老师原始的外参配置
+ros2 launch fast_lio mapping_online.launch.py \
+  config_yaml:=$(ros2 pkg prefix fast_lio)/share/fast_lio/config/hesai32_nus_carter.yaml
+
+# 不启动 RViz
+ros2 launch fast_lio mapping_online.launch.py rviz:=false
+```
+
+### 10.4 配置文件说明
+
+配置文件在 `fast_lio_bitbucket/common/config/`：
+
+- `hesai32_nus_carter.yaml` — 老师提供的原始配置（老师标定的外参）
+- `hesai32_nus_carter_realsenseimu.yaml` — 我们的配置（RealSense IMU 外参）
+
+两者的区别只有 `extrinsic_T` 和 `extrinsic_R`，需要实测对比哪个外参效果更好。
+
+关键参数：
+- `lid_topic` / `imu_topic`：需要和实际发布的 topic 名对应
+- `lidar_type: 4`：Hesai 32 线
+- `blind: 2.0`：忽略 2m 内的点
+
+### 10.5 离线 rosbag 回放模式
+
+```bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install_bitbucket/setup.bash
+
+ros2 run fast_lio fastlio_mapping \
+  <config.yaml路径> \
+  <rosbag2目录> \
+  <输出目录>
+```
+
+### 10.6 在主 launch 中切换 FAST-LIO 版本
+
+`system_scout_hesai_with_ariadne.launch.py` 支持通过 `fastlioVariant` 参数切换：
+
+```bash
+# 使用官方版（默认）
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py
+
+# 使用老师定制版
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install_bitbucket/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+  fastlioVariant:=bitbucket \
+  fastlioConfig:=hesai32_nus_carter_realsenseimu.yaml
+```
+
+注意：
+- 切换时需要 source 对应的 install 目录（`install/` 或 `install_bitbucket/`）
+- `fastlioConfig` 指定配置文件名，文件位于对应 install 目录的 `share/fast_lio/config/` 下
+- 官方版默认配置是 `hesai_xt32.yaml`，老师版建议用 `hesai32_nus_carter_realsenseimu.yaml`
