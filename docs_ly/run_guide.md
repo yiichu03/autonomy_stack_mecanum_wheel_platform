@@ -770,7 +770,27 @@ colcon build --packages-select fast_lio \
 
 ### 10.3 在线模式运行（独立启动，未接入主 launch）
 
+先启动雷达和 IMU（各开一个终端）：
+
 ```bash
+# 终端 1：Hesai 雷达驱动
+source ~/Documents/hesai_ws/install/setup.bash
+ros2 launch hesai_ros_driver start.py
+
+# 终端 2：RealSense IMU（如果用 RealSense IMU 的话）
+source ~/Documents/isaac_ros_ws/install/setup.bash
+ros2 launch realsense2_camera rs_launch.py \
+  unite_imu_method:=1 \
+  enable_gyro:=true \
+  enable_accel:=true
+```
+
+**注意 topic 名匹配**：`hesai32_nus_carter_realsenseimu.yaml` 里配置的是 `lid_topic: "/lidar_points"`、`imu_topic: "/camera/imu"`，分别对应 Hesai 驱动和 RealSense 驱动的默认 topic。如果驱动端改过 topic 名需要同步修改 yaml。
+
+然后启动 FAST-LIO：
+
+```bash
+# 终端 3：FAST-LIO 在线模式
 source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install_bitbucket/setup.bash
 
 # 默认使用 hesai32_nus_carter_realsenseimu.yaml（我们的 RealSense IMU 外参）
