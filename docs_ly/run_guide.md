@@ -834,6 +834,9 @@ ros2 run fast_lio fastlio_mapping \
 `system_scout_hesai_with_ariadne.launch.py` 支持通过 `fastlioVariant` 参数切换：
 
 ```bash
+source /opt/ros/humble/setup.bash  
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash 
+ros2 launch fast_lio mapping.launch.py config_file:=hesai_xt32.yaml
 # 使用官方版（默认）
 source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
