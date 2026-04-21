@@ -158,6 +158,24 @@ source ~/Documents/liuyi/projects/thermal_nav/octomap_ws/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
 ```
+
+fastlio_bitbucket
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install_bitbucket/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/octomap_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+  ariadneMapResolution:=0.2 \
+  ariadneSensorRange:=10.0 \
+  ariadneNodeResolution:=1.0 \
+  maxSpeed:=0.3 \
+  fastlioVariant:=bitbucket \
+  fastlioConfig:=hesai32_nus_carter_realsenseimu.yaml \
+  ariadnePublishGraph:=true
+```
+
 先 source 五行环境（见 3.2 节），然后选一个 launch：
 
 #### 方案一：只跑 Base Autonomy
@@ -203,6 +221,12 @@ ros2 launch vehicle_simulator system_scout_hesai_with_tare.launch.py tareConfig:
 
 默认 resolution=0.4m 时，0.8m 的门只有 2 个 cell，一个噪声点就会堵死通道。必须调小。
 ```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/octomap_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+
 ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
   ariadneMapResolution:=0.2 \
   ariadneSensorRange:=10.0 \
@@ -319,6 +343,7 @@ ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
 - 特点：给你想试的 `sensorRange 25`，但把 `utilityRangeFactor` 一起压低，避免“看得远了，但 utility 也摊得太开”
 
 **D 组：超长走廊试验版**
+
 
 适合“走廊非常长，确实想试 `sensorRange 30` 的效果”，但这组更偏实验性质。
 
