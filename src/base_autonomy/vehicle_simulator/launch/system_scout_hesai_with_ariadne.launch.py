@@ -24,7 +24,8 @@ from datetime import datetime
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
+                             IncludeLaunchDescription, LogInfo, OpaqueFunction)
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, SetParameter
@@ -59,6 +60,7 @@ def generate_launch_description():
     ariadneOctomapMiss = LaunchConfiguration('ariadneOctomapMiss')
     fastlioConfig = LaunchConfiguration('fastlioConfig')
     fastlioVariant = LaunchConfiguration('fastlioVariant')
+    debugFastlio   = LaunchConfiguration('debug_fastlio_bitbucket')
 
     workspace_root = os.path.dirname(
         os.path.dirname(
@@ -138,6 +140,13 @@ def generate_launch_description():
         'fastlioVariant', default_value='official',
         description='FAST-LIO 版本：official=官方 hku-mars 版，bitbucket=老师定制版（需 source install_bitbucket）')
 
+    declare_debug_fastlio = DeclareLaunchArgument(
+        'debug_fastlio_bitbucket', default_value='false',
+        description=(
+            '开启 FastLIO bitbucket 调试模式：'
+            '在 fastlio_ws/log/<时间戳>/ 下保存 rcl 日志，'
+            '并启动 topic 监控脚本（输出 monitor.csv + 实时摘要）'))
+
     fastlio_config_path = os.path.join(
         get_package_share_directory('fast_lio'), 'config')
 
@@ -180,6 +189,37 @@ def generate_launch_description():
             )]
 
     start_fastlio = OpaqueFunction(function=launch_fastlio)
+
+    # ── FastLIO bitbucket 调试模式 ──────────────────────────────────
+    _FASTLIO_LOG_BASE = os.path.join(
+        os.path.expanduser('~/Documents/liuyi/projects/thermal_nav/fastlio_ws'),
+        'log')
+    _fastlio_log_dir = os.path.join(
+        _FASTLIO_LOG_BASE,
+        datetime.now().strftime('%Y%m%d_%H%M%S'))
+    _MONITOR_SCRIPT = os.path.join(
+        os.path.expanduser('~/Documents/liuyi/projects/thermal_nav/fastlio_ws'),
+        'scripts', 'fastlio_monitor.py')
+
+    def setup_fastlio_debug(context):
+        if context.launch_configurations.get(
+                'debug_fastlio_bitbucket', 'false') != 'true':
+            return []
+        os.makedirs(_fastlio_log_dir, exist_ok=True)
+        # 让 FastLIO 进程的 rcl 日志写到这个目录
+        os.environ['ROS_LOG_DIR'] = _fastlio_log_dir
+        csv_path = os.path.join(_fastlio_log_dir, 'monitor.csv')
+        return [
+            LogInfo(msg=f'[debug_fastlio] logs → {_fastlio_log_dir}'),
+            LogInfo(msg=f'[debug_fastlio] monitor CSV → {csv_path}'),
+            ExecuteProcess(
+                cmd=['python3', _MONITOR_SCRIPT, '--csv', csv_path],
+                output='screen',
+            ),
+        ]
+
+    start_fastlio_debug = OpaqueFunction(function=setup_fastlio_debug)
+    # ───────────────────────────────────────────────────────────────
 
     start_registered_scan_relay = Node(
         package='vehicle_simulator',
@@ -361,6 +401,7 @@ def generate_launch_description():
     ld.add_action(declare_ariadne_octomap_miss)
     ld.add_action(declare_fastlio_config)
     ld.add_action(declare_fastlio_variant)
+    ld.add_action(declare_debug_fastlio)
     ld.add_action(LogInfo(msg=['Navigation debug logs: ', debugLogDir]))
 
     ld.add_action(SetParameter(name='use_sim_time', value=use_sim_time))
@@ -369,6 +410,8 @@ def generate_launch_description():
     ld.add_action(tf_body_to_sensor)
     ld.add_action(tf_sensor_at_scan_to_vehicle)
 
+    # debug setup 必须在 start_fastlio 前（设置 ROS_LOG_DIR 环境变量）
+    ld.add_action(start_fastlio_debug)
     ld.add_action(start_fastlio)
     ld.add_action(start_registered_scan_relay)
     ld.add_action(start_odom_relay)
