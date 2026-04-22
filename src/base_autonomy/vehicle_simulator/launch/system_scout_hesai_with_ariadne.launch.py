@@ -56,8 +56,7 @@ def generate_launch_description():
     ariadneUtilityRangeFactor = LaunchConfiguration('ariadneUtilityRangeFactor')
     ariadneMinUtility = LaunchConfiguration('ariadneMinUtility')
     ariadneWaypointThreshold = LaunchConfiguration('ariadneWaypointThreshold')
-    ariadneOctomapHit = LaunchConfiguration('ariadneOctomapHit')
-    ariadneOctomapMiss = LaunchConfiguration('ariadneOctomapMiss')
+    ariadneOctomapConfig = LaunchConfiguration('ariadneOctomapConfig')
     fastlioConfig = LaunchConfiguration('fastlioConfig')
     fastlioVariant = LaunchConfiguration('fastlioVariant')
     debugFastlio   = LaunchConfiguration('debug_fastlio_bitbucket')
@@ -127,12 +126,12 @@ def generate_launch_description():
     declare_ariadne_waypoint_threshold = DeclareLaunchArgument(
         'ariadneWaypointThreshold', default_value='2.0',
         description='ARiADNE 认为“到达 waypoint”的距离阈值 (m)')
-    declare_ariadne_octomap_hit = DeclareLaunchArgument(
-        'ariadneOctomapHit', default_value='1.0',
-        description='octomap 障碍命中置信度，越大越容易把单次观测记成占用')
-    declare_ariadne_octomap_miss = DeclareLaunchArgument(
-        'ariadneOctomapMiss', default_value='0.45',
-        description='octomap 空闲更新置信度，通常与 ariadneOctomapHit 配对调整')
+    declare_ariadne_octomap_config = DeclareLaunchArgument(
+        'ariadneOctomapConfig',
+        default_value=os.path.join(
+            get_package_share_directory('vehicle_simulator'),
+            'config', 'ariadne_octomap.yaml'),
+        description='ARiADNE octomap 参数 YAML；hit/miss/max/min 与动态清理参数在这里配置')
     declare_fastlio_config = DeclareLaunchArgument(
         'fastlioConfig', default_value='hesai_xt32.yaml',
         description='FAST-LIO 配置文件名，位于 fast_lio/share/fast_lio/config/，与 with_tare 保持一致')
@@ -290,22 +289,19 @@ def generate_launch_description():
     )
 
     start_octomap = Node(
-        package='octomap_server',
-        executable='octomap_server_node',
+        package='dynamic_octomap_server',
+        executable='dynamic_octomap_server_node',
         name='octomap',
         output='screen',
         remappings=[('cloud_in', 'sensor_scan')],
         parameters=[
+            ariadneOctomapConfig,
             {'frame_id': 'map'},
             {'base_frame_id': ariadneBaseFrame},
             {'resolution': ariadneMapResolution},
             {'occupancy_min_z': 0.0},
             {'occupancy_max_z': 1.2},
             {'sensor_model.max_range': ariadneSensorRange},
-            {'sensor_model.hit': ariadneOctomapHit},
-            {'sensor_model.miss': ariadneOctomapMiss},
-            {'sensor_model.max': 1.0},
-            {'sensor_model.min': 0.2},
         ],
     )
 
@@ -397,8 +393,7 @@ def generate_launch_description():
     ld.add_action(declare_ariadne_utility_range_factor)
     ld.add_action(declare_ariadne_min_utility)
     ld.add_action(declare_ariadne_waypoint_threshold)
-    ld.add_action(declare_ariadne_octomap_hit)
-    ld.add_action(declare_ariadne_octomap_miss)
+    ld.add_action(declare_ariadne_octomap_config)
     ld.add_action(declare_fastlio_config)
     ld.add_action(declare_fastlio_variant)
     ld.add_action(declare_debug_fastlio)

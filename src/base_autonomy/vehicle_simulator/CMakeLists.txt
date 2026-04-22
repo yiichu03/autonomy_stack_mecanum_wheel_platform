@@ -65,6 +65,7 @@ install(PROGRAMS
 
 install(
   DIRECTORY
+  config
   launch
   log
   mesh
