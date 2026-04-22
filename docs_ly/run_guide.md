@@ -26,6 +26,22 @@
 
 ## 3. 运行前先知道的事
 
+```bash
+cd ~/Documents/liuyi/projects/thermal_nav
+
+# 编译常用全套：official FAST-LIO + bitbucket FAST-LIO + octomap + ARiADNE + 主导航包
+./build_thermal_nav.sh all
+
+# 只编 bitbucket FAST-LIO 和主导航包
+./build_thermal_nav.sh fastlio-bitbucket autonomy-nav
+
+# 只编官方 FAST-LIO
+./build_thermal_nav.sh fastlio-official
+
+# 只编主导航相关包：vehicle_simulator / local_planner / sensor_scan_generation / terrain 等
+./build_thermal_nav.sh autonomy-nav
+```
+
 ### 3.1 干跑时不需要底盘
 
 如果只是验证导航链路和控制输出，跑到观察 `/cmd_vel` 这一步就够了。  
@@ -157,7 +173,14 @@ source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/octomap_ws/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/install/setup.bash
 source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+  ariadneMapResolution:=0.2 \
+  ariadneSensorRange:=10.0 \
+  ariadneNodeResolution:=1.0 \
+  maxSpeed:=0.3 \
+  ariadnePublishGraph:=true
 ```
+
 
 fastlio_bitbucket
 ```bash
@@ -172,10 +195,10 @@ ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
   ariadneNodeResolution:=1.0 \
   maxSpeed:=0.3 \
   fastlioVariant:=bitbucket \
-  fastlioConfig:=hesai32_nus_carter_realsenseimu.yaml \
+  fastlioConfig:=hesai32_nus_carter.yaml \
   ariadnePublishGraph:=true
 ```
-
+_realsenseimu
 先 source 五行环境（见 3.2 节），然后选一个 launch：
 
 #### 方案一：只跑 Base Autonomy
