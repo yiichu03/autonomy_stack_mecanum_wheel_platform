@@ -198,7 +198,8 @@ ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
   fastlioConfig:=hesai32_nus_carter.yaml \
   ariadnePublishGraph:=true
 ```
-_realsenseimu
+ps:hesai32_nus_carter_realsenseimu.yaml is wrong.
+
 先 source 五行环境（见 3.2 节），然后选一个 launch：
 
 #### 方案一：只跑 Base Autonomy
@@ -251,18 +252,52 @@ source ~/Documents/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/install/setup.
 source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
 
 ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
-  ariadneMapResolution:=0.2 \
+  ariadneMapResolution:=0.3 \
   ariadneSensorRange:=10.0 \
   ariadneNodeResolution:=1.0 \
-  maxSpeed:=0.3 \
-  ariadnePublishGraph:=true
+  maxSpeed:=0.4 \
+  ariadnePublishGraph:=true \
+  vehicleLength:=0.90 vehicleWidth:=0.80
 ```
-
 - `resolution 0.2` — 门会被分成更多 cell，噪声更难一次性堵死通道
 - `sensorRange 10.0` — 办公室小，20m 浪费算力在墙上
 - `nodeResolution 1.0` — 小房间需要更密的图节点覆盖
 - `maxSpeed 0.3` — 桌椅间安全低速
+vehicleLength default 0.7  vehicleWidth default 0.60
 
+bitbucket
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install_bitbucket/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/octomap_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+  ariadneMapResolution:=0.2 \
+  ariadneSensorRange:=10.0 \
+  ariadneNodeResolution:=1.0 \
+  maxSpeed:=0.3 \
+  fastlioVariant:=bitbucket \
+  fastlioConfig:=hesai32_nus_carter.yaml \
+  ariadnePublishGraph:=true \
+  vehicleLength:=0.90 vehicleWidth:=0.80
+```
+source /opt/ros/humble/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/fastlio_ws/install_bitbucket/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/octomap_ws/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/install/setup.bash
+source ~/Documents/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/install/setup.bash
+ros2 launch vehicle_simulator system_scout_hesai_with_ariadne.launch.py \
+  ariadneMapResolution:=0.3 \
+  ariadneSensorRange:=10.0 \
+  ariadneNodeResolution:=1.0 \
+  maxSpeed:=0.3 \
+  fastlioVariant:=bitbucket \
+  fastlioConfig:=hesai32_nus_carter_realsenseimu.yaml \
+  ariadnePublishGraph:=true \
+  vehicleLength:=0.90 vehicleWidth:=0.80
+
+ 
 **场景二：走廊（宽 1.5–3m，长直线段）**
 
 ```bash

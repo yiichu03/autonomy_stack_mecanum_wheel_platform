@@ -1,15 +1,15 @@
 octomap:
   ros__parameters:
     sensor_model:
-      hit: 0.7
-      miss: 0.40
+      hit: 0.95 # 单次命中更坚决
+      miss: 0.45 # 单次穿过证据减弱 
       max: 0.97
       min: 0.12
 
     dynamic_clearing:
       enabled: true
-      free_observation_threshold: 2
-      stale_time: 3.0
-      stable_hit_threshold: 4
-      stable_free_observation_threshold: 6
+      free_observation_threshold: 4 # 2 障碍占据后需要更多 miss 才清
+      stale_time: 6.0  # 3.0 动态物（真人走过后）残留时间
+      stable_hit_threshold: 2 # 4
+      stable_free_observation_threshold: 10 # 6 稳定障碍（墙、桌子、站立的障碍）需要 10 次 free 才清
       force_free_updates: 4

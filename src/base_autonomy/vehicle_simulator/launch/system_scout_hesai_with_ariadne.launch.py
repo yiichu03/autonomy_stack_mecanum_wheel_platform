@@ -60,6 +60,8 @@ def generate_launch_description():
     fastlioConfig = LaunchConfiguration('fastlioConfig')
     fastlioVariant = LaunchConfiguration('fastlioVariant')
     debugFastlio   = LaunchConfiguration('debug_fastlio_bitbucket')
+    vehicleLength = LaunchConfiguration('vehicleLength')
+    vehicleWidth = LaunchConfiguration('vehicleWidth')
 
     workspace_root = os.path.dirname(
         os.path.dirname(
@@ -145,6 +147,13 @@ def generate_launch_description():
             '开启 FastLIO bitbucket 调试模式：'
             '在 fastlio_ws/log/<时间戳>/ 下保存 rcl 日志，'
             '并启动 topic 监控脚本（输出 monitor.csv + 实时摘要）'))
+
+    declare_vehicle_length = DeclareLaunchArgument(
+        'vehicleLength', default_value='0.70',
+        description='车体长度 (m)，用于 local_planner 碰撞检测；调大相当于障碍膨胀')
+    declare_vehicle_width = DeclareLaunchArgument(
+        'vehicleWidth', default_value='0.60',
+        description='车体宽度 (m)，用于 local_planner 碰撞检测；调大相当于障碍膨胀')
 
     fastlio_config_path = os.path.join(
         get_package_share_directory('fast_lio'), 'config')
@@ -280,8 +289,8 @@ def generate_launch_description():
             'maxSpeed': maxSpeed,
             'twoWayDrive': 'true',
             'autonomyMode': 'true',
-            'vehicleLength': '0.70',
-            'vehicleWidth': '0.60',
+            'vehicleLength': vehicleLength,
+            'vehicleWidth': vehicleWidth,
             'enableDebugLog': enableDebugLog,
             'debugLogDir': debugLogDir,
             'debugLogDecimation': debugLogDecimation,
@@ -299,7 +308,7 @@ def generate_launch_description():
             {'frame_id': 'map'},
             {'base_frame_id': ariadneBaseFrame},
             {'resolution': ariadneMapResolution},
-            {'occupancy_min_z': 0.0},
+            {'occupancy_min_z': -0.03},
             {'occupancy_max_z': 1.2},
             {'sensor_model.max_range': ariadneSensorRange},
         ],
@@ -397,6 +406,8 @@ def generate_launch_description():
     ld.add_action(declare_fastlio_config)
     ld.add_action(declare_fastlio_variant)
     ld.add_action(declare_debug_fastlio)
+    ld.add_action(declare_vehicle_length)
+    ld.add_action(declare_vehicle_width)
     ld.add_action(LogInfo(msg=['Navigation debug logs: ', debugLogDir]))
 
     ld.add_action(SetParameter(name='use_sim_time', value=use_sim_time))
