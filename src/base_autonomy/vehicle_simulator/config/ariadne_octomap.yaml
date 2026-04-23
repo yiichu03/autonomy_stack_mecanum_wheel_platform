@@ -9,7 +9,7 @@ octomap:
     dynamic_clearing:
       enabled: true
       free_observation_threshold: 4 # 2 障碍占据后需要更多 miss 才清
-      stale_time: 6.0  # 3.0 动态物（真人走过后）残留时间
+      stale_time: 5.0  # 3.0 动态物（真人走过后）残留时间
       stable_hit_threshold: 2 # 4
       stable_free_observation_threshold: 10 # 6 稳定障碍（墙、桌子、站立的障碍）需要 10 次 free 才清
       force_free_updates: 4
