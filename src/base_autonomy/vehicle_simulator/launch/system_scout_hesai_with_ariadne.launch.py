@@ -136,10 +136,10 @@ def generate_launch_description():
         description='ARiADNE octomap 参数 YAML；hit/miss/max/min 与动态清理参数在这里配置')
     declare_fastlio_config = DeclareLaunchArgument(
         'fastlioConfig', default_value='hesai_xt32.yaml',
-        description='FAST-LIO 配置文件名，位于 fast_lio/share/fast_lio/config/，与 with_tare 保持一致')
+        description='FAST-LIO 配置文件名或绝对路径；github 默认用 hesai_xt32.yaml，bitbucket 常用 hesai32_nus_carter_realsenseimu.yaml')
     declare_fastlio_variant = DeclareLaunchArgument(
-        'fastlioVariant', default_value='official',
-        description='FAST-LIO 版本：official=官方 hku-mars 版，bitbucket=老师定制版（需 source install_bitbucket）')
+        'fastlioVariant', default_value='github',
+        description='FAST-LIO 版本：github=仓库里的 GitHub 版，bitbucket=老师定制版；official 保留为兼容别名')
 
     declare_debug_fastlio = DeclareLaunchArgument(
         'debug_fastlio_bitbucket', default_value='false',
@@ -162,8 +162,14 @@ def generate_launch_description():
         variant = context.launch_configurations['fastlioVariant']
         config_name = context.launch_configurations['fastlioConfig']
         sim_time = context.launch_configurations['use_sim_time']
-        config_full_path = os.path.join(
-            get_package_share_directory('fast_lio'), 'config', config_name)
+        if variant == 'official':
+            variant = 'github'
+
+        if os.path.isabs(config_name):
+            config_full_path = config_name
+        else:
+            config_full_path = os.path.join(
+                get_package_share_directory('fast_lio'), 'config', config_name)
 
         common_remappings = [
             ('/Odometry', '/state_estimation_raw'),
@@ -183,7 +189,7 @@ def generate_launch_description():
                 remappings=common_remappings,
                 output='screen',
             )]
-        else:
+        if variant == 'github':
             return [Node(
                 package='fast_lio',
                 executable='fastlio_mapping',
@@ -195,6 +201,9 @@ def generate_launch_description():
                 remappings=common_remappings,
                 output='screen',
             )]
+
+        raise RuntimeError(
+            f"Unsupported fastlioVariant='{variant}'. Use github or bitbucket.")
 
     start_fastlio = OpaqueFunction(function=launch_fastlio)
 
@@ -334,7 +343,7 @@ def generate_launch_description():
             {'frontier_cluster_range': 10.0},
             {'enable_save_mode': False},
             {'enable_dstarlite': False},
-            {'replanning_frequency': 2.5},
+            {'replanning_frequency': 1.5},
             {'use_sim_time': use_sim_time},
         ],
     )

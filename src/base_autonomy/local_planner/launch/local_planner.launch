@@ -30,7 +30,7 @@
     <param name="terrainVoxelSize" value="0.2" />
     <param name="useTerrainAnalysis" value="true" />
     <param name="checkObstacle" value="true" />
-    <param name="checkRotObstacle" value="false" />
+    <param name="checkRotObstacle" value="true" />
     <param name="adjacentRange" value="3.5" />
     <param name="obstacleHeightThre" value="0.05" />
     <param name="groundHeightThre" value="0.05" />
@@ -39,7 +39,7 @@
     <param name="useCost" value="false" />
     <param name="slowPathNumThre" value="5" />
     <param name="slowGroupNumThre" value="1" />
-    <param name="pointPerPathThre" value="2" />
+    <param name="pointPerPathThre" value="1" />
     <param name="minRelZ" value="-0.4" />
     <param name="maxRelZ" value="0.3" />
     <param name="maxSpeed" value="$(var maxSpeed)" />
@@ -63,7 +63,7 @@
     <param name="freezeAng" value="90.0" />
     <param name="freezeTime" value="0.0" />
     <param name="enablePathGroupHysteresis" value="true" />
-    <param name="pathGroupHoldTime" value="0.6" />
+    <param name="pathGroupHoldTime" value="0.8" />
     <param name="pathGroupScoreRatioThre" value="0.85" />
     <param name="enablePathRepublishSuppression" value="true" />
     <param name="pathRepublishMinInterval" value="0.75" />
