@@ -317,7 +317,7 @@ def generate_launch_description():
             {'frame_id': 'map'},
             {'base_frame_id': ariadneBaseFrame},
             {'resolution': ariadneMapResolution},
-            {'occupancy_min_z': -0.03},
+            {'occupancy_min_z': 0.0},
             {'occupancy_max_z': 1.2},
             {'sensor_model.max_range': ariadneSensorRange},
         ],
