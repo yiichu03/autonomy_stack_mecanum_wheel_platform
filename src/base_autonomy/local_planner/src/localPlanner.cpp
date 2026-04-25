@@ -63,6 +63,9 @@ bool checkObstacle = true;
 bool checkRotObstacle = false;
 double adjacentRange = 3.5;
 double obstacleHeightThre = 0.2;
+bool enableTerrainMapInflation = false;
+double terrainMapInflationRadius = 0.0;
+double terrainMapInflationStep = 0.08;
 double groundHeightThre = 0.1;
 double costHeightThre1 = 0.15;
 double costHeightThre2 = 0.1;
@@ -269,6 +272,55 @@ void laserCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser
   }
 }
 
+void inflateTerrainObstacleCloud(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud)
+{
+  if (!enableTerrainMapInflation || terrainMapInflationRadius <= 0.0 || cloud->points.empty()) {
+    return;
+  }
+
+  float radius = static_cast<float>(terrainMapInflationRadius);
+  float step = static_cast<float>(terrainMapInflationStep);
+  if (step <= 0.0f) step = 0.08f;
+  if (step > radius) step = radius;
+
+  int stepNum = static_cast<int>(ceil(radius / step));
+  if (stepNum <= 0) return;
+
+  pcl::PointCloud<pcl::PointXYZI>::Ptr inflatedCloud(new pcl::PointCloud<pcl::PointXYZI>());
+  inflatedCloud->header = cloud->header;
+  inflatedCloud->is_dense = cloud->is_dense;
+  inflatedCloud->points.reserve(cloud->points.size() * (2 * stepNum + 1) * (2 * stepNum + 1));
+
+  float radiusSq = radius * radius;
+  for (size_t i = 0; i < cloud->points.size(); i++) {
+    const pcl::PointXYZI& src = cloud->points[i];
+    inflatedCloud->points.push_back(src);
+
+    if (src.intensity <= obstacleHeightThre) {
+      continue;
+    }
+
+    for (int ix = -stepNum; ix <= stepNum; ix++) {
+      float dx = ix * step;
+      for (int iy = -stepNum; iy <= stepNum; iy++) {
+        float dy = iy * step;
+        if ((ix == 0 && iy == 0) || dx * dx + dy * dy > radiusSq) {
+          continue;
+        }
+
+        pcl::PointXYZI inflatedPoint = src;
+        inflatedPoint.x += dx;
+        inflatedPoint.y += dy;
+        inflatedCloud->points.push_back(inflatedPoint);
+      }
+    }
+  }
+
+  inflatedCloud->width = inflatedCloud->points.size();
+  inflatedCloud->height = 1;
+  *cloud = *inflatedCloud;
+}
+
 void terrainCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr terrainCloud2)
 {
   if (useTerrainAnalysis) {
@@ -297,6 +349,7 @@ void terrainCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr ter
     terrainCloudDwz->clear();
     terrainDwzFilter.setInputCloud(terrainCloudCrop);
     terrainDwzFilter.filter(*terrainCloudDwz);
+    inflateTerrainObstacleCloud(terrainCloudDwz);
 
     newTerrainCloud = true;
   }
@@ -605,6 +658,9 @@ int main(int argc, char** argv)
   nh->declare_parameter<bool>("checkRotObstacle", checkRotObstacle);
   nh->declare_parameter<double>("adjacentRange", adjacentRange);
   nh->declare_parameter<double>("obstacleHeightThre", obstacleHeightThre);
+  nh->declare_parameter<bool>("enableTerrainMapInflation", enableTerrainMapInflation);
+  nh->declare_parameter<double>("terrainMapInflationRadius", terrainMapInflationRadius);
+  nh->declare_parameter<double>("terrainMapInflationStep", terrainMapInflationStep);
   nh->declare_parameter<double>("groundHeightThre", groundHeightThre);
   nh->declare_parameter<double>("costHeightThre1", costHeightThre1);
   nh->declare_parameter<double>("costHeightThre2", costHeightThre2);
@@ -661,6 +717,9 @@ int main(int argc, char** argv)
   nh->get_parameter("checkRotObstacle", checkRotObstacle);
   nh->get_parameter("adjacentRange", adjacentRange);
   nh->get_parameter("obstacleHeightThre", obstacleHeightThre);
+  nh->get_parameter("enableTerrainMapInflation", enableTerrainMapInflation);
+  nh->get_parameter("terrainMapInflationRadius", terrainMapInflationRadius);
+  nh->get_parameter("terrainMapInflationStep", terrainMapInflationStep);
   nh->get_parameter("groundHeightThre", groundHeightThre);
   nh->get_parameter("costHeightThre1", costHeightThre1);
   nh->get_parameter("costHeightThre2", costHeightThre2);
@@ -703,6 +762,12 @@ int main(int argc, char** argv)
   nh->get_parameter("pathRepublishMinInterval", pathRepublishMinInterval);
   nh->get_parameter("pathRepublishPointDiffThre", pathRepublishPointDiffThre);
   nh->get_parameter("pathRepublishEndpointDiffThre", pathRepublishEndpointDiffThre);
+
+  if (terrainMapInflationRadius < 0.0) terrainMapInflationRadius = 0.0;
+  if (terrainMapInflationStep <= 0.0) terrainMapInflationStep = 0.08;
+  RCLCPP_INFO(nh->get_logger(), "terrain_map inflation: %s, radius=%.3f, step=%.3f",
+              enableTerrainMapInflation ? "enabled" : "disabled",
+              terrainMapInflationRadius, terrainMapInflationStep);
 
   auto subOdometry = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, odometryHandler);
 

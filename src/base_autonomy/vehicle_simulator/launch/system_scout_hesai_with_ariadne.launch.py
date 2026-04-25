@@ -57,11 +57,18 @@ def generate_launch_description():
     ariadneMinUtility = LaunchConfiguration('ariadneMinUtility')
     ariadneWaypointThreshold = LaunchConfiguration('ariadneWaypointThreshold')
     ariadneOctomapConfig = LaunchConfiguration('ariadneOctomapConfig')
+    ariadnePointCloudMinZ = LaunchConfiguration('ariadnePointCloudMinZ')
+    ariadnePointCloudMaxZ = LaunchConfiguration('ariadnePointCloudMaxZ')
+    ariadneOccupancyMinZ = LaunchConfiguration('ariadneOccupancyMinZ')
+    ariadneOccupancyMaxZ = LaunchConfiguration('ariadneOccupancyMaxZ')
     fastlioConfig = LaunchConfiguration('fastlioConfig')
     fastlioVariant = LaunchConfiguration('fastlioVariant')
     debugFastlio   = LaunchConfiguration('debug_fastlio_bitbucket')
     vehicleLength = LaunchConfiguration('vehicleLength')
     vehicleWidth = LaunchConfiguration('vehicleWidth')
+    enableTerrainMapInflation = LaunchConfiguration('enableTerrainMapInflation')
+    terrainMapInflationRadius = LaunchConfiguration('terrainMapInflationRadius')
+    terrainMapInflationStep = LaunchConfiguration('terrainMapInflationStep')
 
     workspace_root = os.path.dirname(
         os.path.dirname(
@@ -134,6 +141,18 @@ def generate_launch_description():
             get_package_share_directory('vehicle_simulator'),
             'config', 'ariadne_octomap.yaml'),
         description='ARiADNE octomap 参数 YAML；hit/miss/max/min 与动态清理参数在这里配置')
+    declare_ariadne_point_cloud_min_z = DeclareLaunchArgument(
+        'ariadnePointCloudMinZ', default_value='-100.0',
+        description='进入 ARiADNE OctoMap 前的点云最小 z，高度在 map frame 下判断')
+    declare_ariadne_point_cloud_max_z = DeclareLaunchArgument(
+        'ariadnePointCloudMaxZ', default_value='1.2',
+        description='进入 ARiADNE OctoMap 前的点云最大 z，用来滤掉玻璃穿透/高处漏点')
+    declare_ariadne_occupancy_min_z = DeclareLaunchArgument(
+        'ariadneOccupancyMinZ', default_value='0.0',
+        description='ARiADNE /projected_map 投影时采用的 occupied cell 最小 z')
+    declare_ariadne_occupancy_max_z = DeclareLaunchArgument(
+        'ariadneOccupancyMaxZ', default_value='1.2',
+        description='ARiADNE /projected_map 投影时采用的 occupied cell 最大 z')
     declare_fastlio_config = DeclareLaunchArgument(
         'fastlioConfig', default_value='hesai_xt32.yaml',
         description='FAST-LIO 配置文件名或绝对路径；github 默认用 hesai_xt32.yaml，bitbucket 常用 hesai32_nus_carter_realsenseimu.yaml')
@@ -150,10 +169,19 @@ def generate_launch_description():
 
     declare_vehicle_length = DeclareLaunchArgument(
         'vehicleLength', default_value='0.70',
-        description='车体长度 (m)，用于 local_planner 碰撞检测；调大相当于障碍膨胀')
+        description='车体长度 (m)，主要用于 local_planner 原地旋转碰撞包络')
     declare_vehicle_width = DeclareLaunchArgument(
         'vehicleWidth', default_value='0.60',
-        description='车体宽度 (m)，用于 local_planner 碰撞检测；调大相当于障碍膨胀')
+        description='车体宽度 (m)，主要用于 local_planner 原地旋转碰撞包络')
+    declare_enable_terrain_map_inflation = DeclareLaunchArgument(
+        'enableTerrainMapInflation', default_value='false',
+        description='是否在 local_planner 内部对 /terrain_map 障碍点做水平膨胀')
+    declare_terrain_map_inflation_radius = DeclareLaunchArgument(
+        'terrainMapInflationRadius', default_value='0.0',
+        description='local_planner /terrain_map 障碍点水平膨胀半径 (m)')
+    declare_terrain_map_inflation_step = DeclareLaunchArgument(
+        'terrainMapInflationStep', default_value='0.08',
+        description='local_planner /terrain_map 障碍点膨胀采样步长 (m)')
 
     fastlio_config_path = os.path.join(
         get_package_share_directory('fast_lio'), 'config')
@@ -300,6 +328,9 @@ def generate_launch_description():
             'autonomyMode': 'true',
             'vehicleLength': vehicleLength,
             'vehicleWidth': vehicleWidth,
+            'enableTerrainMapInflation': enableTerrainMapInflation,
+            'terrainMapInflationRadius': terrainMapInflationRadius,
+            'terrainMapInflationStep': terrainMapInflationStep,
             'enableDebugLog': enableDebugLog,
             'debugLogDir': debugLogDir,
             'debugLogDecimation': debugLogDecimation,
@@ -317,8 +348,10 @@ def generate_launch_description():
             {'frame_id': 'map'},
             {'base_frame_id': ariadneBaseFrame},
             {'resolution': ariadneMapResolution},
-            {'occupancy_min_z': 0.0},
-            {'occupancy_max_z': 1.2},
+            {'point_cloud_min_z': ariadnePointCloudMinZ},
+            {'point_cloud_max_z': ariadnePointCloudMaxZ},
+            {'occupancy_min_z': ariadneOccupancyMinZ},
+            {'occupancy_max_z': ariadneOccupancyMaxZ},
             {'sensor_model.max_range': ariadneSensorRange},
         ],
     )
@@ -412,11 +445,18 @@ def generate_launch_description():
     ld.add_action(declare_ariadne_min_utility)
     ld.add_action(declare_ariadne_waypoint_threshold)
     ld.add_action(declare_ariadne_octomap_config)
+    ld.add_action(declare_ariadne_point_cloud_min_z)
+    ld.add_action(declare_ariadne_point_cloud_max_z)
+    ld.add_action(declare_ariadne_occupancy_min_z)
+    ld.add_action(declare_ariadne_occupancy_max_z)
     ld.add_action(declare_fastlio_config)
     ld.add_action(declare_fastlio_variant)
     ld.add_action(declare_debug_fastlio)
     ld.add_action(declare_vehicle_length)
     ld.add_action(declare_vehicle_width)
+    ld.add_action(declare_enable_terrain_map_inflation)
+    ld.add_action(declare_terrain_map_inflation_radius)
+    ld.add_action(declare_terrain_map_inflation_step)
     ld.add_action(LogInfo(msg=['Navigation debug logs: ', debugLogDir]))
 
     ld.add_action(SetParameter(name='use_sim_time', value=use_sim_time))

@@ -8,6 +8,9 @@
   <arg name="twoWayDrive" default="false"/>
   <arg name="vehicleLength" default="0.5"/>
   <arg name="vehicleWidth" default="0.5"/>
+  <arg name="enableTerrainMapInflation" default="false"/>
+  <arg name="terrainMapInflationRadius" default="0.0"/>
+  <arg name="terrainMapInflationStep" default="0.08"/>
   <arg name="maxSpeed" default="0.875"/>
   <arg name="autonomyMode" default="false"/>
   <arg name="autonomySpeed" default="0.875"/>
@@ -23,6 +26,9 @@
     <param name="pathFolder" value="$(find-pkg-share local_planner)/paths" />
     <param name="vehicleLength" value="$(var vehicleLength)" />
     <param name="vehicleWidth" value="$(var vehicleWidth)" />
+    <param name="enableTerrainMapInflation" value="$(var enableTerrainMapInflation)" />
+    <param name="terrainMapInflationRadius" value="$(var terrainMapInflationRadius)" />
+    <param name="terrainMapInflationStep" value="$(var terrainMapInflationStep)" />
     <param name="sensorOffsetX" value="$(var sensorOffsetX)" />
     <param name="sensorOffsetY" value="$(var sensorOffsetY)" />
     <param name="twoWayDrive" value="$(var twoWayDrive)" />
