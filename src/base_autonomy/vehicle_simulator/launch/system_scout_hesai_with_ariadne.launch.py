@@ -56,6 +56,11 @@ def generate_launch_description():
     ariadneUtilityRangeFactor = LaunchConfiguration('ariadneUtilityRangeFactor')
     ariadneMinUtility = LaunchConfiguration('ariadneMinUtility')
     ariadneWaypointThreshold = LaunchConfiguration('ariadneWaypointThreshold')
+    ariadneEnableNearStuckSkip = LaunchConfiguration('ariadneEnableNearStuckSkip')
+    ariadneNearStuckDistance = LaunchConfiguration('ariadneNearStuckDistance')
+    ariadneNearStuckTimeout = LaunchConfiguration('ariadneNearStuckTimeout')
+    ariadneNearStuckMinProgress = LaunchConfiguration('ariadneNearStuckMinProgress')
+    ariadneNearStuckBlacklistDuration = LaunchConfiguration('ariadneNearStuckBlacklistDuration')
     ariadneOctomapConfig = LaunchConfiguration('ariadneOctomapConfig')
     ariadnePointCloudMinZ = LaunchConfiguration('ariadnePointCloudMinZ')
     ariadnePointCloudMaxZ = LaunchConfiguration('ariadnePointCloudMaxZ')
@@ -135,6 +140,21 @@ def generate_launch_description():
     declare_ariadne_waypoint_threshold = DeclareLaunchArgument(
         'ariadneWaypointThreshold', default_value='2.0',
         description='ARiADNE 认为“到达 waypoint”的距离阈值 (m)')
+    declare_ariadne_enable_near_stuck_skip = DeclareLaunchArgument(
+        'ariadneEnableNearStuckSkip', default_value='false',
+        description='是否启用 ARiADNE 近距离 waypoint 卡住后临时跳过机制')
+    declare_ariadne_near_stuck_distance = DeclareLaunchArgument(
+        'ariadneNearStuckDistance', default_value='1.0',
+        description='触发近距离卡住检测的 waypoint 距离阈值 (m)；<=0 时使用 ariadneWaypointThreshold')
+    declare_ariadne_near_stuck_timeout = DeclareLaunchArgument(
+        'ariadneNearStuckTimeout', default_value='10.0',
+        description='近距离内无明显进展持续多久后跳过当前 waypoint (s)')
+    declare_ariadne_near_stuck_min_progress = DeclareLaunchArgument(
+        'ariadneNearStuckMinProgress', default_value='0.15',
+        description='近距离卡住检测中认为“有进展”的最小距离下降量 (m)')
+    declare_ariadne_near_stuck_blacklist_duration = DeclareLaunchArgument(
+        'ariadneNearStuckBlacklistDuration', default_value='45.0',
+        description='被跳过 waypoint 临时降权/拉黑的持续时间 (s)')
     declare_ariadne_octomap_config = DeclareLaunchArgument(
         'ariadneOctomapConfig',
         default_value=os.path.join(
@@ -371,6 +391,11 @@ def generate_launch_description():
             {'frontier_downsample_factor': 1},
             {'map_resolution': ariadneMapResolution},
             {'waypoint_threshold': ariadneWaypointThreshold},
+            {'enable_near_stuck_skip': ariadneEnableNearStuckSkip},
+            {'near_stuck_distance': ariadneNearStuckDistance},
+            {'near_stuck_timeout': ariadneNearStuckTimeout},
+            {'near_stuck_min_progress': ariadneNearStuckMinProgress},
+            {'near_stuck_blacklist_duration': ariadneNearStuckBlacklistDuration},
             {'next_waypoint_threshold': 4.0},
             {'hard_update_threshold': 10.0},
             {'frontier_cluster_range': 10.0},
@@ -444,6 +469,11 @@ def generate_launch_description():
     ld.add_action(declare_ariadne_utility_range_factor)
     ld.add_action(declare_ariadne_min_utility)
     ld.add_action(declare_ariadne_waypoint_threshold)
+    ld.add_action(declare_ariadne_enable_near_stuck_skip)
+    ld.add_action(declare_ariadne_near_stuck_distance)
+    ld.add_action(declare_ariadne_near_stuck_timeout)
+    ld.add_action(declare_ariadne_near_stuck_min_progress)
+    ld.add_action(declare_ariadne_near_stuck_blacklist_duration)
     ld.add_action(declare_ariadne_octomap_config)
     ld.add_action(declare_ariadne_point_cloud_min_z)
     ld.add_action(declare_ariadne_point_cloud_max_z)
